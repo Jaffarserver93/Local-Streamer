@@ -181,11 +181,24 @@ body {
   height: 3.4em !important;
 }
 
-/* ── Loading spinner — hidden, show black screen while buffering ──────────────── */
-.video-js .vjs-loading-spinner,
-.video-js.vjs-waiting .vjs-loading-spinner,
-.video-js.vjs-seeking .vjs-loading-spinner {
-  display: none !important;
+/* ── Loading spinner — red arcs only, no grey background ring ────────────────── */
+/* Hide the grey/dark background ring */
+.video-js .vjs-loading-spinner {
+  border-color: transparent !important;
+}
+/* Both spinning arcs → red instead of white */
+.video-js .vjs-loading-spinner::before,
+.video-js .vjs-loading-spinner::after {
+  border-color: transparent !important;
+  border-top-color: var(--accent) !important;
+}
+.video-js.vjs-waiting .vjs-loading-spinner::before,
+.video-js.vjs-seeking .vjs-loading-spinner::before {
+  border-top-color: var(--accent) !important;
+}
+.video-js.vjs-waiting .vjs-loading-spinner::after,
+.video-js.vjs-seeking .vjs-loading-spinner::after {
+  border-top-color: var(--accent) !important;
 }
 /* Time display — always visible in the control bar */
 .video-js .vjs-current-time,
