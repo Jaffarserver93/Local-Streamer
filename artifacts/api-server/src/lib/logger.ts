@@ -4,12 +4,17 @@ import path from "node:path";
 
 const isProduction = process.env.NODE_ENV === "production";
 
+// Resolve __dirname in ESM context (logger.ts compiles to dist/lib/logger.mjs)
+import { fileURLToPath } from "node:url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
+
 // Log file path — override with LOG_FILE env var.
-// Default: api.log inside VIDEO_DIR (same folder as the videos),
-// falling back to the working directory if VIDEO_DIR isn't set.
+// Default: api.log in artifacts/api-server/ (one level above dist/lib/),
+// so it's always writable and lives next to the public/ folder.
 export const logFile = path.resolve(
   process.env["LOG_FILE"] ??
-    path.join(process.env["VIDEO_DIR"] ?? process.cwd(), "api.log")
+    path.join(__dirname, "..", "..", "api.log")
 );
 
 // Try to create the log file's parent dir and do a write-test.
