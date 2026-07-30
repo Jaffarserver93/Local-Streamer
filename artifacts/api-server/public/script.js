@@ -191,6 +191,15 @@ function initPlayer() {
 
     player.on("error", () => {
       const err = player.error();
+      // If we were on HLS and it failed, automatically fall back to direct streaming.
+      // This covers: Termux /tmp path differences, segment not ready, any HLS hiccup.
+      const src = player.currentSrc() || "";
+      if (src.includes("/api/hls/") && activeFilename) {
+        console.warn("HLS failed, falling back to direct stream", err);
+        try { player.error(null); } catch {}
+        fallbackDirectPlay(activeFilename);
+        return;
+      }
       const msgs = {
         1: "Playback aborted.",
         2: "Network error — check your connection.",
@@ -652,13 +661,14 @@ async function broadcastPlay(filename) {
 /** filename → "generating" | "ready" */
 const hlsState = new Map();
 
+/**
+ * HLS socket events update the library card badges but NEVER interrupt
+ * active playback. Direct streaming starts immediately and keeps playing.
+ * HLS is only used on the NEXT play once it's fully ready (has #EXT-X-ENDLIST).
+ */
 socket.on("hls-segment", ({ filename, count }) => {
   hlsState.set(filename, "generating");
   updateHlsCardState(filename, "generating", count);
-  // If this is the first segment and it's the active video, switch to HLS
-  if (count === 1 && filename === activeFilename) {
-    loadHlsSrc(filename);
-  }
 });
 
 socket.on("hls-ready", ({ filename }) => {
@@ -669,28 +679,15 @@ socket.on("hls-ready", ({ filename }) => {
 socket.on("hls-error", ({ filename, error }) => {
   hlsState.delete(filename);
   updateHlsCardState(filename, "error", 0, error);
-  if (filename === activeFilename) {
-    showToast(`HLS failed — playing directly: ${error}`);
-    fallbackDirectPlay(filename);
-  }
+  // Don't touch the player — direct streaming is already running fine
 });
 
-/** Switch the player to the HLS manifest for the active video. */
-function loadHlsSrc(filename) {
-  if (!player || filename !== activeFilename) return;
-  const src = `/api/hls/${encodeURIComponent(filename)}/index.m3u8`;
-  const current = player.currentSrc() || "";
-  if (current.endsWith("index.m3u8")) return; // already on HLS
-  const pos = player.currentTime() || 0;
-  player.src({ src, type: "application/x-mpegURL" });
-  if (pos > 0) player.one("loadedmetadata", () => player.currentTime(pos));
-  player.play().catch(() => {});
-}
-
 function fallbackDirectPlay(filename) {
-  if (!player || filename !== activeFilename) return;
+  if (!player) return;
   const ext  = filename.split(".").pop().toLowerCase();
   const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
+  // Clear any error state from a previous failed load before setting new src
+  try { player.error(null); } catch {}
   player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
   player.play().catch(() => {});
 }
@@ -723,42 +720,41 @@ async function playViaServer(filename) {
   setNowPlaying(filename);
   highlightCard(filename);
 
-  // 1. Try HLS — request the server to start (or resume) segmentation
-  try {
-    // We need the video-dir to tell the HLS endpoint where to find the file
-    const dirRes  = await fetch("/api/video-dir");
-    const dirBody = dirRes.ok ? await dirRes.json() : null;
-    const videoDir = dirBody?.path ?? "";
+  // Step 1 — always start direct streaming immediately so the video plays
+  // right away with no waiting. This also shows the timer correctly.
+  fallbackDirectPlay(filename);
 
-    const hlsRes  = await fetch(
+  // Step 2 — in the background, ask the server to start (or check) HLS.
+  // If HLS is already fully cached (has #EXT-X-ENDLIST), switch to it now
+  // for chunk-preload buffering. Otherwise generation runs in the background
+  // and will be used on the NEXT play of this file.
+  try {
+    const dirRes   = await fetch("/api/video-dir");
+    const videoDir = dirRes.ok ? ((await dirRes.json()).path ?? "") : "";
+    if (!videoDir) return;
+
+    const hlsRes = await fetch(
       `/api/hls/start/${encodeURIComponent(filename)}?videoDir=${encodeURIComponent(videoDir)}`,
       { method: "POST" }
     );
-    if (hlsRes.ok) {
-      const hlsBody = await hlsRes.json();
-      if (hlsBody.status === "ready") {
-        // HLS already fully generated — play immediately
-        hlsState.set(filename, "ready");
-        player.src({ src: hlsBody.hlsPath, type: "application/x-mpegURL" });
-        player.play().catch(() => {});
-        return;
-      }
-      if (hlsBody.status === "generating" && hlsBody.segments >= 1) {
-        // Enough segments already exist — start playing HLS now
-        hlsState.set(filename, "generating");
-        loadHlsSrc(filename);
-        return;
-      }
-      // Generating but no segments yet — show the card indicator and wait
-      // for the hls-segment socket event (§3 above) to kick off playback
-      hlsState.set(filename, "generating");
-      updateHlsCardState(filename, "generating", hlsBody.segments ?? 0);
-      // Also start direct playback immediately as fallback while waiting
-    }
-  } catch { /* HLS unavailable — fall through to direct play */ }
+    if (!hlsRes.ok) return;
 
-  // 2. Fall back to direct HTTP range streaming
-  fallbackDirectPlay(filename);
+    const body = await hlsRes.json();
+
+    if (body.status === "ready" && filename === activeFilename) {
+      // HLS is fully cached — switch from direct stream to HLS.
+      // Save position so we resume exactly where we are.
+      const pos = player.currentTime() || 0;
+      try { player.error(null); } catch {}
+      player.src({ src: body.hlsPath, type: "application/x-mpegURL" });
+      if (pos > 0.5) player.one("loadedmetadata", () => player.currentTime(pos));
+      player.play().catch(() => {});
+      hlsState.set(filename, "ready");
+    } else if (body.status === "generating") {
+      hlsState.set(filename, "generating");
+      updateHlsCardState(filename, "generating", body.segments ?? 0);
+    }
+  } catch { /* network hiccup — direct stream keeps playing */ }
 }
 
 function hidePlaceholder() {

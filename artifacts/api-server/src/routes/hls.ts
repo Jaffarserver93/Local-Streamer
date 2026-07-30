@@ -204,9 +204,14 @@ router.get("/api/hls/:filename/index.m3u8", (req: Request, res: Response) => {
     return;
   }
 
+  // Use createReadStream instead of res.sendFile — Express 5 sendFile rejects
+  // absolute paths without a root option; piping bypasses that entirely.
   res.setHeader("Content-Type",  "application/vnd.apple.mpegurl");
   res.setHeader("Cache-Control", "no-cache");
-  res.sendFile(manifestPath);
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  const stream = fs.createReadStream(manifestPath);
+  stream.pipe(res);
+  stream.on("error", () => { if (!res.headersSent) res.status(500).end(); });
 });
 
 // ── GET /api/hls/:filename/:segment ───────────────────────────────────────────
@@ -220,10 +225,13 @@ router.get("/api/hls/:filename/:segment", (req: Request, res: Response) => {
     return;
   }
 
+  // Same fix: pipe directly instead of sendFile
   res.setHeader("Content-Type",  "video/mp2t");
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.sendFile(segPath);
+  const stream = fs.createReadStream(segPath);
+  stream.pipe(res);
+  stream.on("error", () => { if (!res.headersSent) res.status(500).end(); });
 });
 
 export default router;

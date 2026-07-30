@@ -127,6 +127,56 @@ body {
 }
 .video-js .vjs-play-progress,
 .video-js .vjs-volume-level { background-color: var(--accent) !important; }
+
+/* ── YouTube-style progress bar ──────────────────────────────────────────────
+   Grey track → light-white buffered section → red played section → red dot  */
+
+/* The overall slider track — dark grey */
+.video-js .vjs-progress-holder {
+  height: 4px !important;
+  background: rgba(255,255,255,.25) !important;
+  border-radius: 2px !important;
+  transition: height .12s ease;
+}
+/* Expand on hover so it's easier to scrub */
+.video-js:hover .vjs-progress-holder,
+.video-js .vjs-progress-control:hover .vjs-progress-holder {
+  height: 6px !important;
+}
+/* Pre-loaded / buffered — light white (like YouTube) */
+.video-js .vjs-load-progress {
+  background: rgba(255,255,255,.45) !important;
+  border-radius: 2px !important;
+}
+/* Inner divs created for each buffered range */
+.video-js .vjs-load-progress div {
+  background: rgba(255,255,255,.45) !important;
+}
+/* Played portion — red */
+.video-js .vjs-play-progress {
+  background: var(--accent) !important;
+  border-radius: 2px !important;
+}
+/* Scrubber dot — red circle at the tip of played section */
+.video-js .vjs-play-progress::before {
+  content: "" !important;
+  width: 13px !important;
+  height: 13px !important;
+  background: var(--accent) !important;
+  border-radius: 50% !important;
+  position: absolute !important;
+  right: -6px !important;
+  top: 50% !important;
+  transform: translateY(-50%) scale(0) !important;
+  transition: transform .12s ease !important;
+  box-shadow: 0 0 0 2px rgba(255,0,0,.28) !important;
+}
+/* Show the dot when hovering the progress bar */
+.video-js:hover .vjs-play-progress::before,
+.video-js .vjs-progress-control:hover .vjs-play-progress::before {
+  transform: translateY(-50%) scale(1) !important;
+}
+
 .video-js .vjs-big-play-button {
   border-color: var(--accent) !important;
   background: rgba(255,0,0,.18) !important;
@@ -140,6 +190,34 @@ body {
   background: linear-gradient(transparent, rgba(0,0,0,.72)) !important;
   height: 3.4em !important;
 }
+
+/* ── Loading spinner — dark, not the default white flash ─────────────────────── */
+/* Remove the bright white default spinner border */
+.video-js .vjs-loading-spinner {
+  border-color: rgba(255,255,255,.15) !important;
+}
+.video-js .vjs-loading-spinner::before,
+.video-js .vjs-loading-spinner::after {
+  border-top-color: var(--accent) !important;
+  border-color: transparent !important;
+  border-top-color: var(--accent) !important;
+}
+/* The buffering overlay that dims the video — keep it dark, not white */
+.video-js.vjs-waiting .vjs-loading-spinner,
+.video-js.vjs-seeking .vjs-loading-spinner {
+  display: block !important;
+}
+/* Time display — always visible in the control bar */
+.video-js .vjs-current-time,
+.video-js .vjs-time-divider,
+.video-js .vjs-duration {
+  display: flex !important;
+  align-items: center;
+  font-size: .82em;
+  padding: 0 .2em;
+}
+.video-js .vjs-time-divider { padding: 0; min-width: unset; }
+.video-js .vjs-duration { color: rgba(255,255,255,.6); }
 
 /* ── Seek overlays ───────────────────────────────────────────────────────────── */
 .seek-overlay {
