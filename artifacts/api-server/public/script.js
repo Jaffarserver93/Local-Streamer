@@ -133,7 +133,7 @@ function initPlayer() {
       children: [
         "playToggle", "skipBackward", "skipForward",
         "volumePanel", "currentTimeDisplay", "timeDivider",
-        "durationDisplay", "remainingTimeDisplay", "progressControl", "fullscreenToggle",
+        "durationDisplay", "progressControl", "fullscreenToggle",
       ],
     },
     inactivityTimeout: 3000,
