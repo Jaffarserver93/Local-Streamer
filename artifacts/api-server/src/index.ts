@@ -14,6 +14,7 @@ import { Server } from "socket.io";
 import os from "node:os";
 import app from "./app.js";
 import { setIO, getGlobalState, livePosition } from "./routes/videos.js";
+import { setHlsIO } from "./routes/hls.js";
 import { logger } from "./lib/logger.js";
 
 const rawPort = process.env["PORT"] ?? "3000";
@@ -34,6 +35,7 @@ const io = new Server(httpServer, {
 
 // Give the videos router a reference to the Socket.io server so it can broadcast
 setIO(io);
+setHlsIO(io);
 
 // ── Socket.io connection handler ───────────────────────────────────────────────
 io.on("connection", (socket) => {

@@ -14,7 +14,7 @@ A self-hosted video streaming server. Point it at a folder of videos, open the U
 
 - pnpm workspaces, Node.js 20, TypeScript 5.9
 - API: Express 5
-- Video: HTTP 206 Range streaming, Video.js v8, SSE for real-time play commands
+- Video: HTTP 206 Range streaming, Video.js v8, Socket.io for real-time sync
 - Build: esbuild (ESM bundle → `artifacts/api-server/dist/index.mjs`)
 
 ## Running on Termux (Android)

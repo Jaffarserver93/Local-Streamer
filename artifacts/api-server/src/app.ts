@@ -19,6 +19,7 @@ import { dirname } from "node:path";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import videosRouter from "./routes/videos";
+import hlsRouter from "./routes/hls";
 import { logger } from "./lib/logger";
 
 // Resolve __dirname in ESM context
@@ -78,6 +79,13 @@ app.use(express.static(PUBLIC_DIR));
 //   GET /api/videos         → list available video files
 //   GET /video/:filename    → stream a video (HTTP Range / 206 Partial Content)
 app.use(videosRouter);
+
+// ── HLS Routes ────────────────────────────────────────────────────────────────
+// Handles:
+//   POST /api/hls/start/:filename  → begin on-demand HLS segmentation
+//   GET  /api/hls/:filename/index.m3u8  → HLS manifest
+//   GET  /api/hls/:filename/:segment    → .ts segment files
+app.use(hlsRouter);
 
 // ── API Router ────────────────────────────────────────────────────────────────
 // Health check and other API endpoints mounted at /api

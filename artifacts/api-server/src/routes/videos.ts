@@ -60,6 +60,39 @@ const MIME_TYPES: Record<string, string> = {
 const NATIVE_EXTS   = new Set([".mp4", ".m4v", ".webm", ".mov"]);
 const SUPPORTED_EXTS = new Set(Object.keys(MIME_TYPES));
 
+// ── MP4 faststart (moov atom) detection ───────────────────────────────────────
+/**
+ * Returns true if the file is an MP4/MOV whose moov atom sits AFTER mdat.
+ * When moov is at the end, the browser can't start decoding until it has
+ * downloaded the whole file → stuttering every second.
+ * Fix: ffmpeg -i in.mp4 -c copy -movflags +faststart -y out.mp4
+ */
+function checkNeedsFaststart(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext !== ".mp4" && ext !== ".m4v" && ext !== ".mov") return false;
+  try {
+    const fd  = fs.openSync(filePath, "r");
+    const buf = Buffer.alloc(16);
+    let offset = 0;
+    // Scan the top-level atom list (first ~4 MB max)
+    while (offset < 4 * 1024 * 1024) {
+      const n = fs.readSync(fd, buf, 0, 16, offset);
+      if (n < 8) break;
+      const size = buf.readUInt32BE(0);
+      const type = buf.toString("ascii", 4, 8);
+      if (type === "moov") { fs.closeSync(fd); return false; } // moov first = fine
+      if (type === "mdat") { fs.closeSync(fd); return true;  } // mdat first = needs fix
+      // Skip atom: handle extended-size (size === 1 means 64-bit size follows)
+      const advance = size === 1
+        ? Number(buf.readBigUInt64BE(8))   // extended 64-bit atom size
+        : size < 8 ? 8 : size;            // guard against malformed size=0
+      offset += advance;
+    }
+    fs.closeSync(fd);
+    return false;
+  } catch { return false; }
+}
+
 // ── Global playback state ──────────────────────────────────────────────────────
 /**
  * Single in-memory session shared by all connected devices.
@@ -254,7 +287,10 @@ router.get("/api/videos", (_req: Request, res: Response) => {
       if (!SUPPORTED_EXTS.has(path.extname(f).toLowerCase())) return false;
       try { return fs.statSync(path.join(currentVideoDir, f)).isFile(); } catch { return false; }
     })
-    .map((filename) => ({ filename }));
+    .map((filename) => ({
+      filename,
+      needsFaststart: checkNeedsFaststart(path.join(currentVideoDir, filename)),
+    }));
 
   res.json(videos);
 });
@@ -288,6 +324,79 @@ router.post("/api/upload", (req: Request, res: Response) => {
     transcodeToMp4(file.path, mp4Path)
       .then(() => { fs.unlink(file.path, () => {}); broadcast("library-updated", {}); })
       .catch((e) => { console.error("Transcode failed:", e); broadcast("library-updated", {}); });
+  });
+});
+
+// ── POST /api/faststart/:filename ─────────────────────────────────────────────
+/**
+ * Remux an MP4 in-place with -movflags +faststart so the moov atom moves to
+ * the front of the file. This eliminates the 1-second-play / buffer / repeat
+ * cycle on large files.
+ *
+ * Flow:
+ *   1. Write remuxed output to a .tmp file next to the original
+ *   2. Replace original with the .tmp file on success
+ *   3. Broadcast faststart-done or faststart-error via Socket.io
+ */
+router.post("/api/faststart/:filename", (req: Request, res: Response) => {
+  const safeName  = path.basename(req.params["filename"] ?? "");
+  const videoPath = path.join(currentVideoDir, safeName);
+  const ext       = path.extname(safeName).toLowerCase();
+
+  if (!fs.existsSync(videoPath)) {
+    res.status(404).json({ error: `Not found: "${safeName}"` });
+    return;
+  }
+  if (ext !== ".mp4" && ext !== ".m4v" && ext !== ".mov") {
+    res.status(400).json({ error: "Only MP4/MOV files can be fixed." });
+    return;
+  }
+  if (!checkNeedsFaststart(videoPath)) {
+    res.json({ success: true, message: "File already has faststart — no action needed." });
+    return;
+  }
+
+  const tmpPath = videoPath + ".fstmp.mp4";
+  res.json({ success: true, started: true });
+
+  let proc: ReturnType<typeof spawn>;
+  try {
+    proc = spawn("ffmpeg", [
+      "-i",  videoPath,
+      "-c",  "copy",
+      "-movflags", "+faststart",
+      "-y",  tmpPath,
+    ]);
+  } catch (e) {
+    broadcast("faststart-error", { filename: safeName, error: String(e) });
+    return;
+  }
+
+  proc.on("close", (code) => {
+    if (code === 0) {
+      try {
+        fs.renameSync(tmpPath, videoPath);
+        broadcast("faststart-done", { filename: safeName });
+        broadcast("library-updated", {});
+      } catch (e) {
+        try { fs.unlinkSync(tmpPath); } catch {}
+        broadcast("faststart-error", { filename: safeName, error: String(e) });
+      }
+    } else {
+      try { fs.unlinkSync(tmpPath); } catch {}
+      broadcast("faststart-error", { filename: safeName, error: `ffmpeg exited ${code}` });
+    }
+  });
+
+  proc.on("error", (e: NodeJS.ErrnoException) => {
+    if (e.code === "ENOENT") {
+      broadcast("faststart-error", {
+        filename: safeName,
+        error: "ffmpeg not found — install it first: pkg install ffmpeg",
+      });
+    } else {
+      broadcast("faststart-error", { filename: safeName, error: e.message });
+    }
   });
 });
 

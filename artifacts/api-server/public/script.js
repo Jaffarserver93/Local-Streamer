@@ -285,6 +285,26 @@ socket.on("library-updated", () => {
   loadServerVideos();
 });
 
+socket.on("faststart-done", ({ filename }) => {
+  const card = videoList.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
+  if (card) {
+    const row = card.querySelector(".faststart-row");
+    if (row) row.remove();
+    delete card.dataset.needsFaststart;
+  }
+  showToast(`✔ Fixed: ${filename} — smooth playback ready`);
+});
+
+socket.on("faststart-error", ({ filename, error }) => {
+  const card = videoList.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
+  if (card) {
+    const row = card.querySelector(".faststart-row");
+    if (row) {
+      row.innerHTML = `<span class="faststart-error">✖ ${esc(error)}</span>`;
+    }
+  }
+});
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    §4  Double-click / double-tap ±5 s seek
@@ -377,7 +397,9 @@ async function loadServerVideos() {
   }
 
   hideStatus();
-  videos.forEach(({ filename }, i) => videoList.appendChild(makeCard(filename, false, i)));
+  videos.forEach(({ filename, needsFaststart }, i) =>
+    videoList.appendChild(makeCard(filename, false, i, needsFaststart))
+  );
 }
 
 function renderLocalFiles(files) {
@@ -394,7 +416,7 @@ function renderLocalFiles(files) {
   });
 }
 
-function makeCard(filename, isLocal, _index) {
+function makeCard(filename, isLocal, _index, needsFaststart) {
   const ext      = filename.split(".").pop().toLowerCase();
   const baseName = filename.replace(/\.[^.]+$/, "");
   const icons    = { mp4: "🎬", mkv: "🎞️", webm: "📹" };
@@ -404,6 +426,7 @@ function makeCard(filename, isLocal, _index) {
   li.tabIndex         = 0;
   li.role             = "button";
   li.dataset.filename = filename;
+  if (needsFaststart) li.dataset.needsFaststart = "1";
 
   li.innerHTML = `
     <div class="video-card-top">
@@ -413,13 +436,58 @@ function makeCard(filename, isLocal, _index) {
         <div class="video-card-ext">${esc(ext.toUpperCase())}</div>
       </div>
     </div>
+    ${needsFaststart ? `
+    <div class="faststart-row">
+      <span class="faststart-warn">⚠ Will buffer</span>
+      <button class="faststart-btn" title="Fix for smooth playback (runs ffmpeg)">⚡ Fix</button>
+    </div>` : ""}
   `;
 
-  li.addEventListener("click",   () => broadcastPlay(filename));
+  li.addEventListener("click", (e) => {
+    if (e.target.closest(".faststart-btn")) return; // handled below
+    broadcastPlay(filename);
+  });
   li.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); broadcastPlay(filename); }
   });
+
+  if (needsFaststart) {
+    const fixBtn = li.querySelector(".faststart-btn");
+    fixBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      runFaststartFix(filename, li);
+    });
+  }
+
   return li;
+}
+
+/** POST /api/faststart/:filename — remux in-place with ffmpeg faststart. */
+async function runFaststartFix(filename, cardEl) {
+  const row    = cardEl.querySelector(".faststart-row");
+  const fixBtn = cardEl.querySelector(".faststart-btn");
+  if (!row || !fixBtn) return;
+
+  fixBtn.disabled    = true;
+  fixBtn.textContent = "⏳ Fixing…";
+  row.querySelector(".faststart-warn").textContent = "Remuxing…";
+
+  try {
+    const r    = await fetch(`/api/faststart/${encodeURIComponent(filename)}`, { method: "POST" });
+    const body = await r.json();
+    if (!r.ok) {
+      row.innerHTML = `<span class="faststart-error">✖ ${esc(body.error || "Failed")}</span>`;
+      return;
+    }
+    if (!body.started) {
+      // Already had faststart — no ffmpeg needed
+      row.remove();
+      delete cardEl.dataset.needsFaststart;
+    }
+    // Otherwise, wait for faststart-done / faststart-error socket events
+  } catch (err) {
+    row.innerHTML = `<span class="faststart-error">✖ ${esc(err.message)}</span>`;
+  }
 }
 
 function showStatus(msg, isError) {
@@ -577,30 +645,120 @@ async function broadcastPlay(filename) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   HLS state — tracks in-progress and ready HLS jobs
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** filename → "generating" | "ready" */
+const hlsState = new Map();
+
+socket.on("hls-segment", ({ filename, count }) => {
+  hlsState.set(filename, "generating");
+  updateHlsCardState(filename, "generating", count);
+  // If this is the first segment and it's the active video, switch to HLS
+  if (count === 1 && filename === activeFilename) {
+    loadHlsSrc(filename);
+  }
+});
+
+socket.on("hls-ready", ({ filename }) => {
+  hlsState.set(filename, "ready");
+  updateHlsCardState(filename, "ready");
+});
+
+socket.on("hls-error", ({ filename, error }) => {
+  hlsState.delete(filename);
+  updateHlsCardState(filename, "error", 0, error);
+  if (filename === activeFilename) {
+    showToast(`HLS failed — playing directly: ${error}`);
+    fallbackDirectPlay(filename);
+  }
+});
+
+/** Switch the player to the HLS manifest for the active video. */
+function loadHlsSrc(filename) {
+  if (!player || filename !== activeFilename) return;
+  const src = `/api/hls/${encodeURIComponent(filename)}/index.m3u8`;
+  const current = player.currentSrc() || "";
+  if (current.endsWith("index.m3u8")) return; // already on HLS
+  const pos = player.currentTime() || 0;
+  player.src({ src, type: "application/x-mpegURL" });
+  if (pos > 0) player.one("loadedmetadata", () => player.currentTime(pos));
+  player.play().catch(() => {});
+}
+
+function fallbackDirectPlay(filename) {
+  if (!player || filename !== activeFilename) return;
+  const ext  = filename.split(".").pop().toLowerCase();
+  const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
+  player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
+  player.play().catch(() => {});
+}
+
+function updateHlsCardState(filename, status, count, error) {
+  const card = videoList.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
+  if (!card) return;
+  let row = card.querySelector(".hls-row");
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "hls-row";
+    card.appendChild(row);
+  }
+  if (status === "generating") {
+    row.innerHTML = `<span class="hls-badge hls-loading">⚡ Preparing… seg ${count}</span>`;
+  } else if (status === "ready") {
+    row.innerHTML = `<span class="hls-badge hls-ready">⚡ Smooth</span>`;
+    setTimeout(() => { if (row.parentElement) row.remove(); }, 3000);
+  } else if (status === "error") {
+    row.innerHTML = `<span class="hls-badge hls-err" title="${esc(error || '')}">⚠ HLS failed</span>`;
+    setTimeout(() => { if (row.parentElement) row.remove(); }, 4000);
+  }
+}
+
 async function playViaServer(filename) {
   if (!player) return;
 
-  // Set activeFilename immediately so incoming seek/pause events from other
-  // tabs are accepted during the HEAD check await below (not dropped).
   activeFilename = filename;
   hidePlaceholder();
   setNowPlaying(filename);
   highlightCard(filename);
 
-  // HEAD check: gives a better error than Video.js's "format not supported"
+  // 1. Try HLS — request the server to start (or resume) segmentation
   try {
-    const check = await fetch(`/video/${encodeURIComponent(filename)}`, { method: "HEAD" });
-    if (!check.ok) {
-      setNowPlaying(`⚠ "${filename}" not found on server — try refreshing`);
-      activeFilename = null;
-      return;
-    }
-  } catch { /* fall through and let Video.js report network errors */ }
+    // We need the video-dir to tell the HLS endpoint where to find the file
+    const dirRes  = await fetch("/api/video-dir");
+    const dirBody = dirRes.ok ? await dirRes.json() : null;
+    const videoDir = dirBody?.path ?? "";
 
-  const ext  = filename.split(".").pop().toLowerCase();
-  const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
-  player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
-  player.play().catch((e) => console.warn("play() rejected:", e));
+    const hlsRes  = await fetch(
+      `/api/hls/start/${encodeURIComponent(filename)}?videoDir=${encodeURIComponent(videoDir)}`,
+      { method: "POST" }
+    );
+    if (hlsRes.ok) {
+      const hlsBody = await hlsRes.json();
+      if (hlsBody.status === "ready") {
+        // HLS already fully generated — play immediately
+        hlsState.set(filename, "ready");
+        player.src({ src: hlsBody.hlsPath, type: "application/x-mpegURL" });
+        player.play().catch(() => {});
+        return;
+      }
+      if (hlsBody.status === "generating" && hlsBody.segments >= 1) {
+        // Enough segments already exist — start playing HLS now
+        hlsState.set(filename, "generating");
+        loadHlsSrc(filename);
+        return;
+      }
+      // Generating but no segments yet — show the card indicator and wait
+      // for the hls-segment socket event (§3 above) to kick off playback
+      hlsState.set(filename, "generating");
+      updateHlsCardState(filename, "generating", hlsBody.segments ?? 0);
+      // Also start direct playback immediately as fallback while waiting
+    }
+  } catch { /* HLS unavailable — fall through to direct play */ }
+
+  // 2. Fall back to direct HTTP range streaming
+  fallbackDirectPlay(filename);
 }
 
 function hidePlaceholder() {
@@ -621,7 +779,27 @@ function highlightCard(filename) {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   §10 Boot
+   §10 Toast notifications
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+let toastTimer = null;
+
+function showToast(msg) {
+  let el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    el.className = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("visible"), 3500);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   §11 Boot
    ═══════════════════════════════════════════════════════════════════════════ */
 
 refreshBtn.addEventListener("click", async () => {
