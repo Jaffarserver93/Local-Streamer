@@ -137,7 +137,21 @@ function initPlayer() {
     initSeekOverlays();
     initKeyboardSeek();
 
-    let seekBroadcastTimer = null;
+    // ── Scrub-while-dragging broadcast ────────────────────────────────────────
+    // Fire seek updates every 80 ms while the user is dragging the scrubber,
+    // so all other tabs move their timeline in real-time.
+    let seekBroadcastInterval = null;
+
+    function startSeekBroadcast() {
+      if (seekBroadcastInterval) return;
+      seekBroadcastInterval = setInterval(() => {
+        if (!activeFilename) return;
+        postSync("/api/seek", { position: player.currentTime() || 0 });
+      }, 80);
+    }
+    function stopSeekBroadcast() {
+      if (seekBroadcastInterval) { clearInterval(seekBroadcastInterval); seekBroadcastInterval = null; }
+    }
 
     player.on("pause", () => {
       if (applyingSync || !activeFilename) return;
@@ -149,12 +163,17 @@ function initPlayer() {
       postSync("/api/resume", { position: player.currentTime() || 0 });
     });
 
-    player.on("seeked", () => {
+    // Start broadcasting as soon as the user begins dragging
+    player.on("seeking", () => {
       if (applyingSync || !activeFilename) return;
-      clearTimeout(seekBroadcastTimer);
-      seekBroadcastTimer = setTimeout(() => {
-        postSync("/api/seek", { position: player.currentTime() || 0 });
-      }, 300);
+      startSeekBroadcast();
+    });
+
+    // Send one final accurate position on release, then stop
+    player.on("seeked", () => {
+      stopSeekBroadcast();
+      if (applyingSync || !activeFilename) return;
+      postSync("/api/seek", { position: player.currentTime() || 0 });
     });
 
     player.on("error", () => {
@@ -234,7 +253,9 @@ socket.on("seek", ({ position, serverTime = Date.now() }) => {
   if (!player || !activeFilename) return;
   applyingSync = true;
   player.currentTime(Math.max(0, position));
-  player.one("seeked", () => { applyingSync = false; });
+  // Use a timeout instead of player.one("seeked") — seeked can be delayed
+  // by buffering and leave applyingSync stuck as true indefinitely.
+  setTimeout(() => { applyingSync = false; }, 600);
 });
 
 socket.on("library-updated", () => {
@@ -536,25 +557,27 @@ async function broadcastPlay(filename) {
 async function playViaServer(filename) {
   if (!player) return;
 
+  // Set activeFilename immediately so incoming seek/pause events from other
+  // tabs are accepted during the HEAD check await below (not dropped).
+  activeFilename = filename;
+  hidePlaceholder();
+  setNowPlaying(filename);
+  highlightCard(filename);
+
   // HEAD check: gives a better error than Video.js's "format not supported"
   try {
     const check = await fetch(`/video/${encodeURIComponent(filename)}`, { method: "HEAD" });
     if (!check.ok) {
-      hidePlaceholder();
       setNowPlaying(`⚠ "${filename}" not found on server — try refreshing`);
-      highlightCard(filename);
+      activeFilename = null;
       return;
     }
-  } catch { /* fall through */ }
+  } catch { /* fall through and let Video.js report network errors */ }
 
-  hidePlaceholder();
   const ext  = filename.split(".").pop().toLowerCase();
   const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
   player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
   player.play().catch((e) => console.warn("play() rejected:", e));
-  activeFilename = filename;
-  setNowPlaying(filename);
-  highlightCard(filename);
 }
 
 function hidePlaceholder() {
