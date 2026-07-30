@@ -47,3 +47,19 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Video files — never commit these, they're served at runtime via VIDEO_DIR
+artifacts/api-server/videos/*.mp4
+artifacts/api-server/videos/*.mkv
+artifacts/api-server/videos/*.webm
+artifacts/api-server/videos/*.mov
+artifacts/api-server/videos/*.avi
+artifacts/api-server/videos/*.m4v
+artifacts/api-server/videos/*.ts
+artifacts/api-server/videos/*.m2ts
+artifacts/api-server/videos/*.wmv
+artifacts/api-server/videos/*.flv
+
+# Log files
+api.log
+*.log
