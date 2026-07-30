@@ -181,21 +181,11 @@ body {
   height: 3.4em !important;
 }
 
-/* ── Loading spinner — dark, not the default white flash ─────────────────────── */
-/* Remove the bright white default spinner border */
-.video-js .vjs-loading-spinner {
-  border-color: rgba(255,255,255,.15) !important;
-}
-.video-js .vjs-loading-spinner::before,
-.video-js .vjs-loading-spinner::after {
-  border-top-color: var(--accent) !important;
-  border-color: transparent !important;
-  border-top-color: var(--accent) !important;
-}
-/* The buffering overlay that dims the video — keep it dark, not white */
+/* ── Loading spinner — hidden, show black screen while buffering ──────────────── */
+.video-js .vjs-loading-spinner,
 .video-js.vjs-waiting .vjs-loading-spinner,
 .video-js.vjs-seeking .vjs-loading-spinner {
-  display: block !important;
+  display: none !important;
 }
 /* Time display — always visible in the control bar */
 .video-js .vjs-current-time,
