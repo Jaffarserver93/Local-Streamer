@@ -15,7 +15,7 @@ import os from "node:os";
 import app from "./app.js";
 import { setIO, getGlobalState, livePosition } from "./routes/videos.js";
 import { setHlsIO } from "./routes/hls.js";
-import { logger } from "./lib/logger.js";
+import { logger, logFile } from "./lib/logger.js";
 
 const rawPort = process.env["PORT"] ?? "3000";
 const port = Number(rawPort);
@@ -79,6 +79,7 @@ httpServer.listen(port, "0.0.0.0", () => {
   const localIP = getLocalIPv4();
 
   logger.info({ port }, "Server listening on all interfaces");
+  logger.info(`  📄  Log file: ${logFile}`);
 
   if (localIP) {
     logger.info(
