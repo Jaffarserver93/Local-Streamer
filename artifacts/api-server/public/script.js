@@ -661,14 +661,35 @@ async function broadcastPlay(filename) {
 /** filename → "generating" | "ready" */
 const hlsState = new Map();
 
+/** How many segments must exist before we switch the live player to HLS.
+ *  2 segments = ~8 s of buffered video — enough to start without stutter. */
+const HLS_SWITCH_THRESHOLD = 2;
+
+/** Switch the currently-playing video to HLS, preserving playback position. */
+function switchToHls(filename) {
+  if (!player || filename !== activeFilename) return;
+  const src = player.currentSrc() || "";
+  if (src.includes("/api/hls/")) return; // already on HLS
+  const hlsPath = `/api/hls/${encodeURIComponent(filename)}/index.m3u8`;
+  const pos = player.currentTime() || 0;
+  try { player.error(null); } catch {}
+  player.src({ src: hlsPath, type: "application/x-mpegURL" });
+  if (pos > 0.5) player.one("loadedmetadata", () => player.currentTime(pos));
+  player.play().catch(() => {});
+}
+
 /**
- * HLS socket events update the library card badges but NEVER interrupt
- * active playback. Direct streaming starts immediately and keeps playing.
- * HLS is only used on the NEXT play once it's fully ready (has #EXT-X-ENDLIST).
+ * HLS socket events:
+ *  - hls-segment: fires each time a new .ts segment lands on disk.
+ *    Once we have HLS_SWITCH_THRESHOLD segments, switch the live player
+ *    from direct stream to HLS so buffering starts immediately.
+ *  - hls-ready: full manifest written — update badge only (player already on HLS).
  */
 socket.on("hls-segment", ({ filename, count }) => {
   hlsState.set(filename, "generating");
   updateHlsCardState(filename, "generating", count);
+  // Switch as soon as we have enough segments to play smoothly
+  if (count >= HLS_SWITCH_THRESHOLD) switchToHls(filename);
 });
 
 socket.on("hls-ready", ({ filename }) => {
@@ -742,17 +763,16 @@ async function playViaServer(filename) {
     const body = await hlsRes.json();
 
     if (body.status === "ready" && filename === activeFilename) {
-      // HLS is fully cached — switch from direct stream to HLS.
-      // Save position so we resume exactly where we are.
-      const pos = player.currentTime() || 0;
-      try { player.error(null); } catch {}
-      player.src({ src: body.hlsPath, type: "application/x-mpegURL" });
-      if (pos > 0.5) player.one("loadedmetadata", () => player.currentTime(pos));
-      player.play().catch(() => {});
+      // Fully cached — switch immediately
       hlsState.set(filename, "ready");
+      switchToHls(filename);
     } else if (body.status === "generating") {
       hlsState.set(filename, "generating");
       updateHlsCardState(filename, "generating", body.segments ?? 0);
+      // Already have enough segments buffered — switch now, don't wait for hls-ready
+      if ((body.segments ?? 0) >= HLS_SWITCH_THRESHOLD && filename === activeFilename) {
+        switchToHls(filename);
+      }
     }
   } catch { /* network hiccup — direct stream keeps playing */ }
 }
