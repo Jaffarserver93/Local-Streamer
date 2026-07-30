@@ -526,13 +526,11 @@ function playLocalFile(filename) {
   const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
   const blobUrl = URL.createObjectURL(file);
 
-  // Set source first, then play once metadata is loaded.
-  // Calling play() immediately after src() races the browser's load cycle and
-  // can result in a blank player even though NOW PLAYING text appears.
+  // Call play() synchronously while still inside the user-tap gesture so
+  // mobile Chrome's autoplay policy allows it. Video.js queues the play
+  // internally until the source has loaded — no need to wait for loadedmetadata.
   player.src({ src: blobUrl, type: mime[ext] || "video/mp4" });
-  player.one("loadedmetadata", () => {
-    player.play().catch((e) => console.warn("play() rejected:", e));
-  });
+  player.play().catch((e) => console.warn("play() rejected:", e));
   setNowPlaying(filename);
 }
 
@@ -542,10 +540,9 @@ function playViaServer(filename) {
   const ext  = filename.split(".").pop().toLowerCase();
   const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
   player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
-  // Wait for metadata before calling play() — same race-condition fix as playLocalFile
-  player.one("loadedmetadata", () => {
-    player.play().catch((e) => console.warn("play() rejected:", e));
-  });
+  // Call play() synchronously (still inside the user-tap gesture) so mobile
+  // Chrome allows it. Video.js queues the play until the source has loaded.
+  player.play().catch((e) => console.warn("play() rejected:", e));
   setNowPlaying(filename);
   highlightCard(filename);
 }
