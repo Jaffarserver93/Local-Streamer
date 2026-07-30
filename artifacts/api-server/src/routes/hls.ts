@@ -107,6 +107,21 @@ function countSegments(dir: string): number {
   } catch { return 0; }
 }
 
+/**
+ * Version marker written into each HLS cache directory.
+ * Bump this string whenever the ffmpeg arguments change (e.g. adding transcode)
+ * so that old caches generated with incompatible settings are auto-wiped.
+ */
+const CACHE_VERSION = "v2-h264-transcode";
+const VERSION_FILE  = ".cache_version";
+
+function readCacheVersion(dir: string): string | null {
+  try { return fs.readFileSync(path.join(dir, VERSION_FILE), "utf8").trim(); } catch { return null; }
+}
+function writeCacheVersion(dir: string): void {
+  try { fs.writeFileSync(path.join(dir, VERSION_FILE), CACHE_VERSION); } catch {}
+}
+
 /** Kick off ffmpeg HLS segmentation.  Re-entrant: no-op if job already exists. */
 async function startJob(filename: string, videoPath: string): Promise<HlsJob> {
   const s = stem(filename);
@@ -166,6 +181,7 @@ async function startJob(filename: string, videoPath: string): Promise<HlsJob> {
     const n = countSegments(dir);
     job.segments = n;
     if (code === 0) {
+      writeCacheVersion(dir);   // stamp so future restarts know this cache is valid
       job.status = "ready";
       broadcast("hls-ready",   { filename, segments: n });
       broadcast("hls-segment", { filename, count: n });
@@ -229,23 +245,39 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
     return;
   }
 
-  // Check on-disk cache (server restarted but files remain)
+  // Check on-disk cache (server restarted but files remain).
+  // Also verify the cache version — old caches generated without the H.264
+  // transcode fix have a different (or missing) version marker and must be wiped.
   const manifestPath = path.join(dir, "index.m3u8");
   if (fs.existsSync(manifestPath)) {
-    const content = fs.readFileSync(manifestPath, "utf8");
-    if (content.includes("#EXT-X-ENDLIST")) {
+    const cacheVer = readCacheVersion(dir);
+    const versionOk = cacheVer === CACHE_VERSION;
+    const content   = versionOk ? fs.readFileSync(manifestPath, "utf8") : "";
+    if (versionOk && content.includes("#EXT-X-ENDLIST")) {
       const n = countSegments(dir);
       const job: HlsJob = { status: "ready", hlsDir: dir, segments: n };
       jobs.set(s, job);
       res.json({ status: "ready", segments: n, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
       return;
     }
-    // Manifest exists but incomplete — wipe and re-generate
+    // Manifest missing version marker (old HEVC cache) or incomplete — wipe and re-generate
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 
   const job = await startJob(filename, videoPath);
   res.json({ status: "generating", segments: job.segments, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
+});
+
+// ── POST /api/hls/clear ────────────────────────────────────────────────────────
+/** Wipe all HLS segment caches — useful after codec changes or to free space. */
+router.post("/api/hls/clear", (_req: Request, res: Response) => {
+  jobs.clear();
+  try {
+    fs.rmSync(HLS_CACHE_ROOT, { recursive: true, force: true });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
 });
 
 // ── GET /api/hls/:filename/index.m3u8 ─────────────────────────────────────────

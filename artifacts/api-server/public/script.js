@@ -380,6 +380,7 @@ function initKeyboardSeek() {
 const videoList     = document.getElementById("videoList");
 const libraryStatus = document.getElementById("libraryStatus");
 const refreshBtn    = document.getElementById("refreshBtn");
+const clearHlsBtn   = document.getElementById("clearHlsBtn");
 const localFiles    = new Map();
 let   isLocalMode   = false;
 
@@ -817,6 +818,19 @@ function showToast(msg) {
 /* ═══════════════════════════════════════════════════════════════════════════
    §11 Boot
    ═══════════════════════════════════════════════════════════════════════════ */
+
+clearHlsBtn?.addEventListener("click", async () => {
+  if (!confirm("Clear HLS cache? Videos will re-buffer on next play but black screen issues will be fixed.")) return;
+  clearHlsBtn.disabled = true;
+  clearHlsBtn.textContent = "⏳";
+  try {
+    const r = await fetch("/api/hls/clear", { method: "POST" });
+    clearHlsBtn.textContent = r.ok ? "✓" : "✗";
+  } catch {
+    clearHlsBtn.textContent = "✗";
+  }
+  setTimeout(() => { clearHlsBtn.textContent = "🗑"; clearHlsBtn.disabled = false; }, 2000);
+});
 
 refreshBtn.addEventListener("click", async () => {
   refreshBtn.classList.add("spinning");
