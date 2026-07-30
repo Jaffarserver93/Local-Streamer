@@ -60,6 +60,42 @@ function stem(filename: string): string {
   return filename.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9._\-]/g, "_");
 }
 
+/**
+ * Browser-native video codecs that can be copied directly into HLS TS segments
+ * without re-encoding.  Everything else (HEVC/H.265, AV1, MPEG-2, etc.) needs
+ * to be transcoded to H.264 so Chrome/Safari/Firefox can decode it.
+ */
+const BROWSER_NATIVE_VIDEO_CODECS = new Set([
+  "h264", "avc1", "avc",
+  "vp8",
+  "vp9",
+]);
+
+/**
+ * Use ffprobe to read the video codec name of the first video stream.
+ * Returns the codec name in lower-case, or null if ffprobe isn't available
+ * or the file has no video stream.
+ */
+function probeVideoCodec(videoPath: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    let proc: ReturnType<typeof spawn>;
+    try {
+      proc = spawn("ffprobe", [
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        videoPath,
+      ]);
+    } catch { resolve(null); return; }
+
+    let out = "";
+    proc.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
+    proc.on("close", () => resolve(out.trim().toLowerCase() || null));
+    proc.on("error", () => resolve(null));
+  });
+}
+
 function hlsDir(filename: string): string {
   return path.join(HLS_CACHE_ROOT, stem(filename));
 }
@@ -72,7 +108,7 @@ function countSegments(dir: string): number {
 }
 
 /** Kick off ffmpeg HLS segmentation.  Re-entrant: no-op if job already exists. */
-function startJob(filename: string, videoPath: string): HlsJob {
+async function startJob(filename: string, videoPath: string): Promise<HlsJob> {
   const s = stem(filename);
   const existing = jobs.get(s);
   if (existing) return existing;
@@ -85,9 +121,26 @@ function startJob(filename: string, videoPath: string): HlsJob {
 
   const manifestPath = path.join(dir, "index.m3u8");
 
+  // Detect video codec so we know whether to copy or transcode.
+  // HEVC/H.265 (and other non-H.264 codecs) render as a black screen in
+  // Chrome/Android because the browser can't decode them from TS segments.
+  // Transcode those to H.264; copy everything the browser already supports.
+  const detectedCodec = await probeVideoCodec(videoPath);
+  const needsTranscode = detectedCodec !== null && !BROWSER_NATIVE_VIDEO_CODECS.has(detectedCodec);
+
+  const videoArgs: string[] = needsTranscode
+    ? [
+        // Re-encode to H.264 for browser compatibility.
+        // Scale down to 1080p max so phones don't choke on 4K transcoding.
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-vf",  "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+        "-c:a", "aac", "-b:a", "128k",
+      ]
+    : ["-c", "copy"];  // stream copy — fast, no quality loss
+
   const proc = spawn("ffmpeg", [
     "-i",    videoPath,
-    "-c",    "copy",                    // no re-encode — fast
+    ...videoArgs,
     "-f",    "hls",
     "-hls_time",             String(HLS_SEGMENT_DURATION),
     "-hls_list_size",        "0",       // keep all segments in manifest
@@ -143,7 +196,7 @@ function startJob(filename: string, videoPath: string): HlsJob {
 const router = Router();
 
 // ── POST /api/hls/start/:filename ──────────────────────────────────────────────
-router.post("/api/hls/start/:filename", (req: Request, res: Response) => {
+router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
   const filename  = path.basename(req.params["filename"] ?? "");
   const videoDir  = (req.query["videoDir"] as string | undefined) ?? "";
 
@@ -189,7 +242,7 @@ router.post("/api/hls/start/:filename", (req: Request, res: Response) => {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 
-  const job = startJob(filename, videoPath);
+  const job = await startJob(filename, videoPath);
   res.json({ status: "generating", segments: job.segments, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
 });
 
