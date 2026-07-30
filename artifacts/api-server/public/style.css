@@ -157,24 +157,14 @@ body {
   background: var(--accent) !important;
   border-radius: 2px !important;
 }
-/* Scrubber dot — red circle at the tip of played section */
+/* No scrubber dot — flat bar only (red played / white buffered / grey track) */
 .video-js .vjs-play-progress::before {
-  content: "" !important;
-  width: 13px !important;
-  height: 13px !important;
-  background: var(--accent) !important;
-  border-radius: 50% !important;
-  position: absolute !important;
-  right: -6px !important;
-  top: 50% !important;
-  transform: translateY(-50%) scale(0) !important;
-  transition: transform .12s ease !important;
-  box-shadow: 0 0 0 2px rgba(255,0,0,.28) !important;
+  display: none !important;
 }
-/* Show the dot when hovering the progress bar */
-.video-js:hover .vjs-play-progress::before,
-.video-js .vjs-progress-control:hover .vjs-play-progress::before {
-  transform: translateY(-50%) scale(1) !important;
+/* Hide the default Video.js slider handle too */
+.video-js .vjs-slider-handle,
+.video-js .vjs-progress-control .vjs-slider-handle {
+  display: none !important;
 }
 
 .video-js .vjs-big-play-button {
