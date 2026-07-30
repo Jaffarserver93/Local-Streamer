@@ -246,6 +246,27 @@ body {
   text-transform: uppercase; letter-spacing: .06em; margin-top: .16rem;
 }
 
+/* ── Add-to-library button ───────────────────────────────────────────────────── */
+.library-header-actions { display: flex; align-items: center; gap: .5rem; }
+
+.add-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: var(--accent); color: #fff;
+  border: none; border-radius: var(--radius);
+  padding: .38rem .75rem; font-size: .8rem; font-weight: 600;
+  cursor: pointer; transition: background var(--ease), transform var(--ease);
+  white-space: nowrap; line-height: 1;
+}
+.add-btn:hover  { background: var(--accentd); transform: translateY(-1px); }
+.add-btn:active { transform: none; }
+
+.upload-status {
+  font-size: .8rem; padding: .5rem .75rem; border-radius: var(--radius);
+  background: rgba(255,255,255,.06); margin-bottom: .5rem;
+}
+.upload-status.error    { color: #ff6b6b; background: rgba(255,0,0,.08); }
+.upload-status.progress { color: var(--muted); }
+
 /* ── Footer ──────────────────────────────────────────────────────────────────── */
 .app-footer {
   text-align: center; padding: 1.25rem 1rem 2rem;

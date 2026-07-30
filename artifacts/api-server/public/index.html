@@ -75,8 +75,15 @@
     <section class="library-section">
       <div class="library-header">
         <h2>Library</h2>
-        <button id="refreshBtn" class="icon-btn refresh-icon" title="Refresh">&#8635;</button>
+        <div class="library-header-actions">
+          <label id="addToLibraryBtn" class="add-btn" title="Add video to library">
+            ＋ Add video
+            <input id="uploadInput" type="file" accept="video/*" hidden />
+          </label>
+          <button id="refreshBtn" class="icon-btn refresh-icon" title="Refresh">&#8635;</button>
+        </div>
       </div>
+      <div id="uploadStatus" class="upload-status" hidden></div>
       <div id="libraryStatus" class="library-status" hidden></div>
       <ul id="videoList" class="video-list" role="list"></ul>
     </section>

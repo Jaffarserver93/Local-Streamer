@@ -38,14 +38,27 @@
 
 let player = null;
 
+/**
+ * True while we are applying an incoming SSE event.
+ * Prevents the player's own event listeners from re-broadcasting the change
+ * back to the server and creating an infinite echo loop.
+ */
+let applyingSync = false;
+
+/** POST a sync command to the server without awaiting the response. */
+function postSync(url, body) {
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch(() => {});
+}
+
 function initPlayer() {
   player = videojs("videoPlayer", {
     controls: true,
     preload: "metadata",
     playsinline: true,
-    // fluid/aspectRatio removed — sizing is handled entirely by CSS
-    // (.video-js { position:absolute; inset:0; width:100%; height:100% })
-    // Enabling fluid here would fight the CSS and produce a zero-height player.
     techOrder: ["html5"],
     controlBar: {
       skipButtons: { backward: 5, forward: 5 },
@@ -61,6 +74,28 @@ function initPlayer() {
   player.ready(() => {
     initSeekOverlays();
     initKeyboardSeek();
+
+    // ── Broadcast pause / resume / seek to all other clients ──────────────
+    let seekBroadcastTimer = null;
+
+    player.on("pause", () => {
+      if (applyingSync || !activeFilename) return;
+      postSync("/api/pause", { position: player.currentTime() || 0 });
+    });
+
+    player.on("play", () => {
+      if (applyingSync || !activeFilename) return;
+      postSync("/api/resume", { position: player.currentTime() || 0 });
+    });
+
+    player.on("seeked", () => {
+      if (applyingSync || !activeFilename) return;
+      // Debounce: only send after the user stops scrubbing
+      clearTimeout(seekBroadcastTimer);
+      seekBroadcastTimer = setTimeout(() => {
+        postSync("/api/seek", { position: player.currentTime() || 0 });
+      }, 300);
+    });
 
     // Show a human-readable error if a video fails to load/decode
     player.on("error", () => {
@@ -144,9 +179,61 @@ function initKeyboardSeek() {
 
   es.addEventListener("play", (e) => {
     try {
-      const { filename } = JSON.parse(e.data);
-      if (filename) playViaServer(filename);
+      const { filename, seek, paused } = JSON.parse(e.data);
+      if (!filename) return;
+      applyingSync = true;
+      playViaServer(filename).then(() => {
+        const applyState = () => {
+          if (seek && seek > 0.5) player.currentTime(seek);
+          if (paused) {
+            player.pause();
+          }
+          setTimeout(() => { applyingSync = false; }, 200);
+        };
+        // readyState >= 1 means metadata is already available
+        if (player.readyState() >= 1) {
+          applyState();
+        } else {
+          player.one("loadedmetadata", applyState);
+        }
+      });
     } catch {}
+  });
+
+  es.addEventListener("pause", (e) => {
+    try {
+      if (!player || !activeFilename) return;
+      const { position } = JSON.parse(e.data);
+      applyingSync = true;
+      if (position != null) player.currentTime(position);
+      player.pause();
+      setTimeout(() => { applyingSync = false; }, 150);
+    } catch {}
+  });
+
+  es.addEventListener("resume", (e) => {
+    try {
+      if (!player || !activeFilename) return;
+      const { position } = JSON.parse(e.data);
+      applyingSync = true;
+      if (position != null) player.currentTime(position);
+      player.play().catch(() => {});
+      setTimeout(() => { applyingSync = false; }, 200);
+    } catch {}
+  });
+
+  es.addEventListener("seek", (e) => {
+    try {
+      if (!player || !activeFilename) return;
+      const { position } = JSON.parse(e.data);
+      applyingSync = true;
+      player.currentTime(position);
+      player.one("seeked", () => { applyingSync = false; });
+    } catch {}
+  });
+
+  es.addEventListener("library-updated", () => {
+    loadServerVideos();
   });
 
   es.onerror = () => {
@@ -376,14 +463,28 @@ function playLocalFile(filename) {
   setNowPlaying(filename);
 }
 
-function playViaServer(filename) {
+async function playViaServer(filename) {
   if (!player) return;
+
+  // Check the file actually exists before handing it to Video.js.
+  // A missing file returns a 404 JSON response which Video.js reports as
+  // "format not supported" — a completely wrong message. We catch it here.
+  try {
+    const check = await fetch(`/video/${encodeURIComponent(filename)}`, { method: "HEAD" });
+    if (!check.ok) {
+      hidePlaceholder();
+      setNowPlaying(`⚠ "${filename}" not found on server — try refreshing the library`);
+      highlightCard(filename);
+      return;
+    }
+  } catch {
+    // Network error — fall through and let Video.js report it
+  }
+
   hidePlaceholder();
   const ext  = filename.split(".").pop().toLowerCase();
   const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
   player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
-  // Call play() synchronously (still inside the user-tap gesture) so mobile
-  // Chrome allows it. Video.js queues the play until the source has loaded.
   player.play().catch((e) => console.warn("play() rejected:", e));
   setNowPlaying(filename);
   highlightCard(filename);
@@ -409,6 +510,51 @@ function highlightCard(filename) {
    §9  Chromecast
    ═══════════════════════════════════════════════════════════════════════════ */
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   §10 Boot
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   §6  Add-to-library upload
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const uploadInput  = document.getElementById("uploadInput");
+const uploadStatus = document.getElementById("uploadStatus");
+
+uploadInput.addEventListener("change", async () => {
+  const file = uploadInput.files[0];
+  if (!file) return;
+  uploadInput.value = ""; // reset so same file can be picked again
+
+  showUploadStatus(`Uploading ${file.name}…`, false, true);
+
+  const fd = new FormData();
+  fd.append("video", file);
+
+  try {
+    const r    = await fetch("/api/upload", { method: "POST", body: fd });
+    const body = await r.json();
+    if (!r.ok) { showUploadStatus(`Upload failed: ${body.error}`, true); return; }
+    if (body.transcoding) {
+      showUploadStatus(`⚙ Converting to MP4… library updates automatically when done`, false, true);
+      // library-updated SSE triggers loadServerVideos() when ffmpeg finishes
+    } else {
+      showUploadStatus(`✔ Added "${body.filename}" to library`, false);
+      await loadServerVideos();
+      setTimeout(() => { if (uploadStatus) uploadStatus.hidden = true; }, 3000);
+    }
+  } catch (e) {
+    showUploadStatus(`Upload failed: ${e.message}`, true);
+  }
+});
+
+function showUploadStatus(msg, isError, isProgress) {
+  uploadStatus.textContent = msg;
+  uploadStatus.className   = "upload-status" +
+    (isError ? " error" : "") + (isProgress ? " progress" : "");
+  uploadStatus.hidden = false;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    §10 Boot

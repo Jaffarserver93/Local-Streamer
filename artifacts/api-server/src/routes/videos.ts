@@ -15,6 +15,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { spawn } from "node:child_process";
+import multer from "multer";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -28,13 +30,75 @@ const __dirname = dirname(__filename);
 let currentVideoDir: string =
   process.env["VIDEO_DIR"] ?? path.join(__dirname, "..", "videos");
 
+// All extensions we can stream directly (browser-native)
 const MIME_TYPES: Record<string, string> = {
-  ".mp4": "video/mp4",
-  ".mkv": "video/x-matroska",
+  ".mp4":  "video/mp4",
+  ".m4v":  "video/mp4",
+  ".mkv":  "video/x-matroska",
   ".webm": "video/webm",
+  ".mov":  "video/quicktime",
+  ".avi":  "video/x-msvideo",
+  ".wmv":  "video/x-ms-wmv",
+  ".flv":  "video/x-flv",
+  ".ts":   "video/mp2t",
+  ".3gp":  "video/3gpp",
+  ".3g2":  "video/3gpp2",
+  ".ogv":  "video/ogg",
+  ".m2ts": "video/mp2t",
+  ".mts":  "video/mp2t",
 };
+// Extensions that Chrome/Safari can play natively — no transcode needed
+const NATIVE_EXTS = new Set([".mp4", ".m4v", ".webm", ".mov"]);
 const SUPPORTED_EXTS = new Set(Object.keys(MIME_TYPES));
 const DEFAULT_CHUNK = 1024 * 1024; // 1 MB
+
+// ─── Current playback state ───────────────────────────────────────────────────
+/** Tracks what's currently playing so new tabs can join mid-stream in sync */
+let nowPlaying: {
+  filename: string;
+  paused: boolean;
+  position: number;    // seconds at the time positionAt was recorded
+  positionAt: number;  // server ms timestamp when position was last recorded
+} | null = null;
+
+/** Calculate the live playback position right now */
+function livePosition(): number {
+  if (!nowPlaying) return 0;
+  if (nowPlaying.paused) return nowPlaying.position;
+  return nowPlaying.position + (Date.now() - nowPlaying.positionAt) / 1000;
+}
+
+// ─── ffmpeg transcoding ───────────────────────────────────────────────────────
+/**
+ * Transcode any video to a browser-safe H.264 MP4.
+ * Handles rotation metadata, HEVC, AVI, MKV, MOV, etc.
+ */
+function transcodeToMp4(input: string, output: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let proc: ReturnType<typeof spawn>;
+    try {
+      proc = spawn("ffmpeg", [
+        "-i", input,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        "-y",
+        output,
+      ]);
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`)));
+    proc.on("error", (e: NodeJS.ErrnoException) => {
+      if (e.code === "ENOENT") reject(new Error("ffmpeg not found — install it with: pkg install ffmpeg"));
+      else reject(e);
+    });
+  });
+}
 
 const STREAM_CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -63,6 +127,28 @@ function broadcast(event: string, data: unknown): void {
   }
 }
 
+// ─── Multer upload config ─────────────────────────────────────────────────────
+const storage = multer.diskStorage({
+  destination(_req, _file, cb) {
+    if (!fs.existsSync(currentVideoDir)) {
+      fs.mkdirSync(currentVideoDir, { recursive: true });
+    }
+    cb(null, currentVideoDir);
+  },
+  filename(_req, file, cb) {
+    const safe = path
+      .basename(file.originalname)
+      .replace(/[^a-zA-Z0-9._\-\s]/g, "_")
+      .trim();
+    cb(null, safe || `upload_${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 * 1024 }, // 20 GB — accept all video files
+});
+
 const router: IRouter = Router();
 
 // ─── GET /events ─────────────────────────────────────────────────────────────
@@ -87,7 +173,16 @@ router.get("/events", (req: Request, res: Response) => {
 
   // Tell the browser to reconnect after 3 s if the connection drops
   res.write("retry: 3000\n\n");
-  res.write(":connected\n\n"); // comment line — keeps the connection alive immediately
+  res.write(":connected\n\n");
+
+  // Catch up new viewers: send current filename + position + pause state
+  if (nowPlaying) {
+    res.write(`event: play\ndata: ${JSON.stringify({
+      filename: nowPlaying.filename,
+      seek: livePosition(),
+      paused: nowPlaying.paused,
+    })}\n\n`);
+  }
 
   sseClients.add(res);
 
@@ -107,6 +202,53 @@ router.get("/events", (req: Request, res: Response) => {
   });
 });
 
+// ─── POST /api/upload ────────────────────────────────────────────────────────
+/**
+ * Upload a video to the server library.
+ * Once saved to disk it shows in the library for everyone and can be
+ * broadcast-played instantly with POST /api/play.
+ */
+router.post("/api/upload", (req: Request, res: Response) => {
+  upload.single("video")(req, res, (err: unknown) => {
+    if (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: "No file received." });
+      return;
+    }
+
+    const ext = path.extname(file.filename).toLowerCase();
+    const needsTranscode = !NATIVE_EXTS.has(ext);
+
+    if (!needsTranscode) {
+      // Already browser-safe — available immediately
+      broadcast("library-updated", {});
+      res.json({ success: true, filename: file.filename, transcoding: false });
+      return;
+    }
+
+    // Transcode to H.264 MP4 in the background; respond immediately so the
+    // browser doesn't time out on large files
+    const mp4Name = file.filename.replace(/\.[^.]+$/, "") + ".mp4";
+    const mp4Path = path.join(currentVideoDir, mp4Name);
+    res.json({ success: true, filename: mp4Name, transcoding: true });
+
+    transcodeToMp4(file.path, mp4Path)
+      .then(() => {
+        fs.unlink(file.path, () => {}); // remove original
+        broadcast("library-updated", {});
+      })
+      .catch((e) => {
+        console.error("Transcode failed:", e);
+        // Keep the original so the user can try again
+        broadcast("library-updated", {});
+      });
+  });
+});
+
 // ─── POST /api/play ───────────────────────────────────────────────────────────
 /**
  * Remote-control endpoint: phone taps "▶ Play on TV" next to a library card
@@ -122,8 +264,33 @@ router.post("/api/play", (req: Request, res: Response) => {
     return;
   }
 
+  nowPlaying = { filename, paused: false, position: 0, positionAt: Date.now() };
   broadcast("play", { filename });
   res.json({ success: true, clients: sseClients.size });
+});
+
+// ─── POST /api/pause ─────────────────────────────────────────────────────────
+router.post("/api/pause", (req: Request, res: Response) => {
+  const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
+  if (nowPlaying) { nowPlaying.paused = true; nowPlaying.position = position; nowPlaying.positionAt = Date.now(); }
+  broadcast("pause", { position });
+  res.json({ success: true });
+});
+
+// ─── POST /api/resume ────────────────────────────────────────────────────────
+router.post("/api/resume", (req: Request, res: Response) => {
+  const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
+  if (nowPlaying) { nowPlaying.paused = false; nowPlaying.position = position; nowPlaying.positionAt = Date.now(); }
+  broadcast("resume", { position });
+  res.json({ success: true });
+});
+
+// ─── POST /api/seek ──────────────────────────────────────────────────────────
+router.post("/api/seek", (req: Request, res: Response) => {
+  const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
+  if (nowPlaying) { nowPlaying.position = position; nowPlaying.positionAt = Date.now(); }
+  broadcast("seek", { position });
+  res.json({ success: true });
 });
 
 // ─── GET /api/video-dir ───────────────────────────────────────────────────────
