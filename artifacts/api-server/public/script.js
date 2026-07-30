@@ -514,12 +514,13 @@ function playVideo(filename) {
 }
 
 function playLocalFile(filename) {
+  if (!player) return;   // guard: Video.js might not have initialised yet
   const file = localFiles.get(filename);
   if (!file) return;
   hidePlaceholder();
 
   // Revoke previous blob URL to avoid memory leaks
-  const prev = player.currentSrc?.();
+  const prev = player?.currentSrc?.();
   if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
 
   const ext  = filename.split(".").pop().toLowerCase();

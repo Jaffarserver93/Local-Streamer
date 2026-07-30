@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#121212" />
   <title>📺 Local Stream</title>
 
-  <!-- Video.js v8 (latest stable, from official CDN) -->
-  <link href="https://vjs.zencdn.net/8.23.9/video-js.css" rel="stylesheet" />
+  <!-- Video.js v8 — served locally so it works offline / on Termux / no CDN -->
+  <link href="/video-js.css" rel="stylesheet" />
   <link rel="stylesheet" href="/style.css" />
 
   <!--
@@ -141,8 +141,8 @@
     </p>
   </footer>
 
-  <!-- Video.js v8 -->
-  <script src="https://vjs.zencdn.net/8.23.9/video.min.js"></script>
+  <!-- Video.js v8 — served locally -->
+  <script src="/video.min.js"></script>
   <script src="/script.js"></script>
 </body>
 </html>
