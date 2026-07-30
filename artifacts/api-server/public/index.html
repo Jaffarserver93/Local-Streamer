@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#121212" />
+  <title>📺 Local Stream</title>
+
+  <!-- Video.js v8 (latest stable from official CDN — v10 is not yet released) -->
+  <link href="https://vjs.zencdn.net/8.23.9/video-js.css" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/style.css" />
+
+  <!--
+    Google Cast Sender SDK v3 (CAF).
+    Must be in <head> so window.__onGCastApiAvailable is registered before the
+    SDK fires its callback. loadCastFramework=1 loads the v3 CAF layer.
+  -->
+  <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+</head>
+<body>
+
+  <!-- ── App Header ──────────────────────────────────────────────────────── -->
+  <header class="app-header">
+    <span class="logo">📺</span>
+    <h1>Local Stream</h1>
+    <span class="header-right">
+      <button id="folderToggleBtn" class="icon-btn" title="Change video folder">📁</button>
+    </span>
+  </header>
+
+  <!-- ── Folder Picker Panel (collapsed by default) ─────────────────────── -->
+  <div id="folderPanel" class="folder-panel" hidden>
+    <div class="folder-panel-inner">
+      <p class="folder-panel-title">Video Source</p>
+
+      <!-- Option A: browser-side folder picker (works on localhost / HTTPS) -->
+      <div class="folder-option">
+        <button id="browseBtn" class="browse-btn">
+          <span>🗂</span> Browse &amp; pick folder
+        </button>
+        <span class="folder-note">Plays locally on this device (no network share)</span>
+      </div>
+
+      <div class="folder-divider"><span>or type a server path</span></div>
+
+      <!-- Option B: server-side path (works over the network, enables TV + Cast) -->
+      <div class="folder-option folder-path-row">
+        <input
+          id="folderPathInput"
+          class="folder-path-input"
+          type="text"
+          placeholder="/sdcard/Download   or   /home/user/Videos"
+          spellcheck="false"
+          autocomplete="off"
+        />
+        <button id="setFolderBtn" class="set-folder-btn">Apply</button>
+      </div>
+
+      <p id="folderCurrentPath" class="folder-current-path"></p>
+      <p id="folderError" class="folder-error" hidden></p>
+    </div>
+  </div>
+
+  <main class="app-main">
+
+    <!-- ── Player Section ─────────────────────────────────────────────────── -->
+    <section class="player-section">
+      <div class="player-wrapper">
+
+        <!--
+          Video.js v10 target element.
+          The `video-js` class activates Video.js styles.
+          data-setup="{}" would also work but we init via JS for more control.
+        -->
+        <video
+          id="videoPlayer"
+          class="video-js vjs-default-skin"
+          preload="metadata"
+          playsinline
+        ></video>
+
+        <!--
+          Double-click / double-tap seek overlays.
+          Divided into left (−5 s) and right (+5 s) halves.
+          They sit on top of the Video.js player; pointer-events are none
+          by default and only enabled momentarily during animation so they
+          don't swallow control-bar clicks.
+        -->
+        <div id="seekOverlayLeft"  class="seek-overlay seek-left"  aria-hidden="true">
+          <div class="seek-ripple"></div>
+          <div class="seek-label"><span class="seek-arrows">◀◀</span><span class="seek-secs">5 sec</span></div>
+        </div>
+        <div id="seekOverlayRight" class="seek-overlay seek-right" aria-hidden="true">
+          <div class="seek-ripple"></div>
+          <div class="seek-label"><span class="seek-secs">5 sec</span><span class="seek-arrows">▶▶</span></div>
+        </div>
+
+        <!-- Placeholder shown when nothing is loaded -->
+        <div id="playerPlaceholder" class="player-placeholder">
+          <div class="placeholder-icon">▶</div>
+          <p>Pick a video below to play</p>
+        </div>
+      </div>
+
+      <!-- Now-playing strip -->
+      <div id="nowPlaying" class="now-playing" hidden>
+        <span class="now-playing-label">NOW PLAYING</span>
+        <span id="nowPlayingName" class="now-playing-name"></span>
+      </div>
+    </section>
+
+    <!-- ── Chromecast ──────────────────────────────────────────────────────── -->
+    <section class="cast-section">
+      <div class="cast-row">
+        <span class="cast-label">Cast to TV:</span>
+        <google-cast-launcher id="castButton"></google-cast-launcher>
+        <span id="castStatus" class="cast-status"></span>
+      </div>
+    </section>
+
+    <!-- ── Video Library ───────────────────────────────────────────────────── -->
+    <section class="library-section">
+      <div class="library-header">
+        <h2>Library</h2>
+        <button id="refreshBtn" class="icon-btn refresh-icon" title="Refresh">↻</button>
+      </div>
+      <div id="libraryStatus" class="library-status" hidden></div>
+      <ul id="videoList" class="video-list" role="list"></ul>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <p>
+      Put videos in <code>videos/</code> on the server, or tap 📁 to change the folder.
+      <br/>Left/Right arrow keys or double-tap sides of player to seek ±5 s.
+    </p>
+  </footer>
+
+  <!-- Video.js v8 (latest stable) -->
+  <script src="https://vjs.zencdn.net/8.23.9/video.min.js"></script>
+  <script src="/script.js"></script>
+</body>
+</html>
