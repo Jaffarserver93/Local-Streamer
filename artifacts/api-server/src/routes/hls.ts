@@ -41,10 +41,11 @@ const HLS_SEGMENT_DURATION = 4;
 type HlsStatus = "generating" | "ready" | "error";
 
 interface HlsJob {
-  status:   HlsStatus;
-  hlsDir:   string;
-  segments: number;   // segments confirmed on disk so far
-  error?:   string;
+  status:      HlsStatus;
+  hlsDir:      string;
+  segments:    number;   // segments confirmed on disk so far
+  transcoding: boolean;  // true = HEVC→H.264 re-encode (slow); false = stream copy (fast)
+  error?:      string;
 }
 
 /** stem (filename without ext) → job */
@@ -131,9 +132,6 @@ async function startJob(filename: string, videoPath: string): Promise<HlsJob> {
   const dir = hlsDir(filename);
   fs.mkdirSync(dir, { recursive: true });
 
-  const job: HlsJob = { status: "generating", hlsDir: dir, segments: 0 };
-  jobs.set(s, job);
-
   const manifestPath = path.join(dir, "index.m3u8");
 
   // Detect video codec so we know whether to copy or transcode.
@@ -142,8 +140,11 @@ async function startJob(filename: string, videoPath: string): Promise<HlsJob> {
   // the browser can play HEVC via direct streaming (hardware decoder).
   // Rule: ONLY skip transcode when the codec is explicitly H.264/VP8/VP9.
   // If ffprobe is unavailable (returns null), transcode to be safe.
-  const detectedCodec = await probeVideoCodec(videoPath);
+  const detectedCodec  = await probeVideoCodec(videoPath);
   const needsTranscode = detectedCodec === null || !BROWSER_NATIVE_VIDEO_CODECS.has(detectedCodec);
+
+  const job: HlsJob = { status: "generating", hlsDir: dir, segments: 0, transcoding: needsTranscode };
+  jobs.set(s, job);
 
   const videoArgs: string[] = needsTranscode
     ? [
@@ -172,7 +173,7 @@ async function startJob(filename: string, videoPath: string): Promise<HlsJob> {
     const n = countSegments(dir);
     if (n > job.segments) {
       job.segments = n;
-      broadcast("hls-segment", { filename, count: n });
+      broadcast("hls-segment", { filename, count: n, transcoding: job.transcoding });
     }
   }, 500);
 
@@ -235,13 +236,13 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
   // Cache hit: already ready
   const existing = jobs.get(s);
   if (existing?.status === "ready") {
-    res.json({ status: "ready", segments: existing.segments, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
+    res.json({ status: "ready", segments: existing.segments, transcoding: false, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
     return;
   }
 
   // Cache hit: still generating
   if (existing?.status === "generating") {
-    res.json({ status: "generating", segments: existing.segments, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
+    res.json({ status: "generating", segments: existing.segments, transcoding: existing.transcoding, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
     return;
   }
 
@@ -255,9 +256,9 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
     const content   = versionOk ? fs.readFileSync(manifestPath, "utf8") : "";
     if (versionOk && content.includes("#EXT-X-ENDLIST")) {
       const n = countSegments(dir);
-      const job: HlsJob = { status: "ready", hlsDir: dir, segments: n };
+      const job: HlsJob = { status: "ready", hlsDir: dir, segments: n, transcoding: false };
       jobs.set(s, job);
-      res.json({ status: "ready", segments: n, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
+      res.json({ status: "ready", segments: n, transcoding: false, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
       return;
     }
     // Manifest missing version marker (old HEVC cache) or incomplete — wipe and re-generate
@@ -265,7 +266,12 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
   }
 
   const job = await startJob(filename, videoPath);
-  res.json({ status: "generating", segments: job.segments, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
+  res.json({
+    status:      "generating",
+    segments:    job.segments,
+    transcoding: job.transcoding,
+    hlsPath:     `/api/hls/${encodeURIComponent(filename)}/index.m3u8`,
+  });
 });
 
 // ── POST /api/hls/clear ────────────────────────────────────────────────────────

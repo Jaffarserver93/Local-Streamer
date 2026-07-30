@@ -686,11 +686,14 @@ function switchToHls(filename) {
  *    from direct stream to HLS so buffering starts immediately.
  *  - hls-ready: full manifest written — update badge only (player already on HLS).
  */
-socket.on("hls-segment", ({ filename, count }) => {
+socket.on("hls-segment", ({ filename, count, transcoding }) => {
   hlsState.set(filename, "generating");
-  updateHlsCardState(filename, "generating", count);
-  // Switch as soon as we have enough segments to play smoothly
-  if (count >= HLS_SWITCH_THRESHOLD) switchToHls(filename);
+  updateHlsCardState(filename, "generating", count, transcoding);
+  // Only auto-switch to HLS during live generation when NOT transcoding.
+  // Transcoding HEVC→H.264 on a phone is often slower than real-time —
+  // forcing HLS mid-play causes the "1s buffer / 20ms play" stutter loop.
+  // Instead, let direct streaming run; HLS cache will be ready for next play.
+  if (!transcoding && count >= HLS_SWITCH_THRESHOLD) switchToHls(filename);
 });
 
 socket.on("hls-ready", ({ filename }) => {
@@ -714,7 +717,9 @@ function fallbackDirectPlay(filename) {
   player.play().catch(() => {});
 }
 
-function updateHlsCardState(filename, status, count, error) {
+function updateHlsCardState(filename, status, count, transcodingOrError, error) {
+  const transcoding = (status === "generating" && transcodingOrError === true);
+  if (status !== "generating") error = transcodingOrError;
   const card = videoList.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
   if (!card) return;
   let row = card.querySelector(".hls-row");
@@ -724,7 +729,10 @@ function updateHlsCardState(filename, status, count, error) {
     card.appendChild(row);
   }
   if (status === "generating") {
-    row.innerHTML = `<span class="hls-badge hls-loading">⚡ Preparing… seg ${count}</span>`;
+    const label = transcoding
+      ? `⚙ Converting… seg ${count} (plays smooth next time)`
+      : `⚡ Preparing… seg ${count}`;
+    row.innerHTML = `<span class="hls-badge hls-loading">${label}</span>`;
   } else if (status === "ready") {
     row.innerHTML = `<span class="hls-badge hls-ready">⚡ Smooth</span>`;
     setTimeout(() => { if (row.parentElement) row.remove(); }, 3000);
@@ -764,14 +772,17 @@ async function playViaServer(filename) {
     const body = await hlsRes.json();
 
     if (body.status === "ready" && filename === activeFilename) {
-      // Fully cached — switch immediately
+      // Fully cached H.264 HLS — switch immediately for smooth buffering
       hlsState.set(filename, "ready");
       switchToHls(filename);
     } else if (body.status === "generating") {
       hlsState.set(filename, "generating");
-      updateHlsCardState(filename, "generating", body.segments ?? 0);
-      // Already have enough segments buffered — switch now, don't wait for hls-ready
-      if ((body.segments ?? 0) >= HLS_SWITCH_THRESHOLD && filename === activeFilename) {
+      updateHlsCardState(filename, "generating", body.segments ?? 0, body.transcoding);
+      // Only switch mid-play when NOT transcoding (stream copy is fast enough).
+      // When transcoding (HEVC→H.264 on phone) segments arrive slower than
+      // real-time — switching now causes stutter. Direct stream keeps playing;
+      // HLS cache will be ready and used on the next play of this file.
+      if (!body.transcoding && (body.segments ?? 0) >= HLS_SWITCH_THRESHOLD && filename === activeFilename) {
         switchToHls(filename);
       }
     }
