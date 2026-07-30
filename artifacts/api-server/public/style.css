@@ -290,6 +290,7 @@ body {
   border-radius: var(--radius); padding: .85rem .95rem;
   cursor: pointer; display: flex; align-items: flex-start; gap: .65rem;
   flex-direction: column;
+  min-width: 0; overflow: hidden;
   transition: background var(--ease), border-color var(--ease),
               transform var(--ease), box-shadow var(--ease);
   outline: none; animation: fadeUp .2s ease both;
