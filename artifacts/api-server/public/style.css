@@ -39,16 +39,6 @@ body {
 .app-header h1    { font-size: 1.2rem; font-weight: 700; color: #fff; }
 .header-right     { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
 
-/* SSE connection indicator dot */
-.sse-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--muted);
-  transition: background .3s ease;
-  flex-shrink: 0;
-}
-.sse-dot.connected  { background: var(--green); box-shadow: 0 0 6px var(--green); }
-.sse-dot.error      { background: var(--accent); }
-
 .icon-btn {
   background: none;
   border: 1px solid rgba(255,255,255,.12);
@@ -205,77 +195,6 @@ body {
 }
 .now-playing-name { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   SEND TO TV SECTION
-   ══════════════════════════════════════════════════════════════════════════ */
-.send-section {
-  display: flex; flex-direction: column; gap: .75rem;
-  max-width: 800px; margin: 0 auto; width: 100%;
-}
-
-.send-btn {
-  display: flex; align-items: center; gap: 1rem;
-  width: 100%; padding: 1rem 1.4rem;
-  background: linear-gradient(135deg, #c50000 0%, #ff0000 100%);
-  border: none; border-radius: var(--radius);
-  cursor: pointer; color: #fff; text-align: left;
-  box-shadow: 0 4px 20px rgba(255,0,0,.35);
-  transition: opacity var(--ease), transform var(--ease), box-shadow var(--ease);
-  -webkit-tap-highlight-color: transparent;
-}
-.send-btn:hover  { opacity: .92; transform: translateY(-1px); box-shadow: 0 6px 24px rgba(255,0,0,.45); }
-.send-btn:active { opacity: .85; transform: none; }
-
-.send-btn-icon { font-size: 2rem; line-height: 1; flex-shrink: 0; }
-.send-btn-text {
-  display: flex; flex-direction: column; gap: .15rem; min-width: 0;
-}
-.send-btn-text strong { font-size: 1rem; font-weight: 700; display: block; }
-.send-btn-text small  { font-size: .78rem; opacity: .85; display: block; }
-
-/* Upload progress box */
-.upload-box {
-  background: var(--surface); border: 1px solid rgba(255,255,255,.07);
-  border-radius: var(--radius); padding: .85rem 1rem;
-  display: flex; flex-direction: column; gap: .55rem;
-}
-.upload-top {
-  display: flex; justify-content: space-between; align-items: center; gap: .5rem;
-}
-.upload-filename {
-  font-size: .82rem; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; color: var(--text); max-width: calc(100% - 48px);
-}
-.upload-pct { font-size: .82rem; font-weight: 700; color: var(--accent); flex-shrink: 0; }
-.upload-track {
-  width: 100%; height: 6px;
-  background: rgba(255,255,255,.08); border-radius: 3px; overflow: hidden;
-}
-.upload-bar {
-  height: 100%; background: var(--accent); border-radius: 3px;
-  transition: width .1s linear;
-}
-.upload-status {
-  font-size: .75rem; color: var(--muted);
-}
-.upload-status.done  { color: var(--green); }
-.upload-status.error { color: #ef5350; }
-
-/* ── Cast ────────────────────────────────────────────────────────────────────── */
-.cast-section { display: flex; justify-content: center; }
-.cast-row {
-  display: flex; align-items: center; gap: .7rem;
-  background: var(--surface); padding: .6rem 1.1rem;
-  border-radius: 50px; border: 1px solid rgba(255,255,255,.06);
-}
-.cast-label { font-size: .82rem; color: var(--muted); }
-google-cast-launcher {
-  --connected-color: var(--accent); --disconnected-color: var(--muted);
-  display: inline-block; width: 26px; height: 26px; cursor: pointer;
-}
-.cast-status { font-size: .74rem; color: var(--muted); min-width: 70px; }
-.cast-status.connected { color: var(--green); }
-
 /* ── Library ─────────────────────────────────────────────────────────────────── */
 .library-section { display: flex; flex-direction: column; gap: .85rem; }
 .library-header { display: flex; align-items: center; justify-content: space-between; }
@@ -326,21 +245,6 @@ google-cast-launcher {
   font-size: .69rem; color: var(--muted);
   text-transform: uppercase; letter-spacing: .06em; margin-top: .16rem;
 }
-
-/* "▶ Play on TV" button inside each card */
-.play-on-tv-btn {
-  width: 100%; display: flex; align-items: center; justify-content: center;
-  gap: .4rem; padding: .38rem .6rem;
-  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
-  border-radius: 6px; color: var(--muted); font-size: .75rem;
-  cursor: pointer; white-space: nowrap;
-  transition: background var(--ease), color var(--ease), border-color var(--ease);
-}
-.play-on-tv-btn:hover {
-  background: rgba(255,0,0,.12); border-color: rgba(255,0,0,.3);
-  color: #fff;
-}
-.play-on-tv-btn.sending { color: var(--accent); border-color: var(--accentd); }
 
 /* ── Footer ──────────────────────────────────────────────────────────────────── */
 .app-footer {

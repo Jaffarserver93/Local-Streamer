@@ -134,56 +134,6 @@ function initKeyboardSeek() {
   });
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   §4  Server-Sent Events — receive "play" commands from the phone
-   ═══════════════════════════════════════════════════════════════════════════
-
-   Both the TV and the phone connect here.
-   When the phone uploads a file or taps "▶ Play on TV", the server pushes a
-   "play" event and this handler fires on ALL connected screens instantly.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-const sseDot = document.getElementById("sseIndicator");
-
-function connectSSE() {
-  const es = new EventSource("/events");
-
-  es.onopen = () => {
-    sseDot.className = "sse-dot connected";
-    sseDot.title = "Live — will auto-play when phone sends a video";
-  };
-
-  es.onerror = () => {
-    sseDot.className = "sse-dot error";
-    sseDot.title = "Reconnecting…";
-    // EventSource retries automatically; no manual reconnect needed
-  };
-
-  /**
-   * "play" event — phone uploaded a video or tapped "▶ Play on TV".
-   * data: { filename: "movie.mp4" }
-   *
-   * We play it on every connected screen. The TV gets the big video,
-   * the phone gets it in its mini-player (fine — it knows it sent it).
-   */
-  es.addEventListener("play", (e) => {
-    const { filename } = JSON.parse(e.data);
-
-    // If this device just uploaded the file, skip auto-playing on the sender
-    // so only the TV plays. (We set justSentFile = filename during upload.)
-    if (justSentFile === filename) {
-      justSentFile = null;
-      return;
-    }
-
-    playViaServer(filename);
-    // Refresh library so the uploaded file appears in the list
-    loadServerVideos();
-  });
-}
-
-/** Set by the upload handler right before the SSE event would arrive */
-let justSentFile = null;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    §5  Video library
@@ -241,9 +191,7 @@ function renderLocalFiles(files) {
 }
 
 /**
- * Creates a video card with:
- *   - click to play locally
- *   - "▶ Play on TV" button to broadcast play via SSE
+ * Creates a video card — click to play on this device.
  */
 function makeCard(filename, isLocal, _index) {
   const ext      = filename.split(".").pop().toLowerCase();
@@ -264,46 +212,12 @@ function makeCard(filename, isLocal, _index) {
         <div class="video-card-ext">${esc(ext)}</div>
       </div>
     </div>
-    ${!isLocal ? `
-    <button class="play-on-tv-btn" data-filename="${esc(filename)}" title="Push to TV screen">
-      📺 Play on TV
-    </button>` : ""}
   `;
 
-  // Click the card itself → play on this device
-  li.addEventListener("click", (e) => {
-    if (e.target.closest(".play-on-tv-btn")) return; // handled below
-    playVideo(filename);
-  });
+  li.addEventListener("click", () => playVideo(filename));
   li.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); playVideo(filename); }
   });
-
-  // "▶ Play on TV" button → broadcast via SSE (no local playback on this device)
-  const tvBtn = li.querySelector(".play-on-tv-btn");
-  if (tvBtn) {
-    tvBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      tvBtn.classList.add("sending");
-      tvBtn.textContent = "Sending…";
-      try {
-        await fetch("/api/play", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename }),
-        });
-        tvBtn.textContent = "✔ Sent!";
-        setTimeout(() => {
-          tvBtn.classList.remove("sending");
-          tvBtn.innerHTML = "📺 Play on TV";
-        }, 2000);
-      } catch {
-        tvBtn.textContent = "Failed";
-        tvBtn.classList.remove("sending");
-        setTimeout(() => { tvBtn.innerHTML = "📺 Play on TV"; }, 2000);
-      }
-    });
-  }
 
   return li;
 }
@@ -319,105 +233,6 @@ function esc(s) {
            .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   §6  Send to TV — upload a video file from the phone
-   ═══════════════════════════════════════════════════════════════════════════
-
-   UX flow:
-     1. User taps "📤 Send Video to TV"
-     2. Native file picker opens (phone's Camera Roll / Downloads / Files)
-     3. User picks a video
-     4. XHR uploads it to POST /upload with real-time progress bar
-     5. Server saves the file and broadcasts an SSE "play" event
-     6. TV receives the event and auto-plays
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-const sendToTvBtn  = document.getElementById("sendToTvBtn");
-const fileInput    = document.getElementById("fileInput");
-const uploadBox    = document.getElementById("uploadBox");
-const uploadBar    = document.getElementById("uploadBar");
-const uploadPct    = document.getElementById("uploadPct");
-const uploadStatus = document.getElementById("uploadStatus");
-const uploadFName  = document.getElementById("uploadFileName");
-
-// Tap the big red button → open the native file picker
-sendToTvBtn.addEventListener("click", () => fileInput.click());
-
-// File selected → start upload
-fileInput.addEventListener("change", () => {
-  const file = fileInput.files[0];
-  if (!file) return;
-  fileInput.value = ""; // reset so the same file can be re-picked next time
-  uploadFile(file);
-});
-
-/**
- * Uploads the selected file with real-time progress feedback.
- * Uses XMLHttpRequest instead of fetch() because only XHR exposes upload progress events.
- *
- * @param {File} file
- */
-function uploadFile(file) {
-  // Show the progress box
-  uploadFName.textContent = file.name;
-  setUploadProgress(0, "Uploading…", "");
-  uploadBox.hidden = false;
-
-  // Mark this filename so the SSE handler on THIS device skips auto-play
-  // (only the TV should auto-play; the phone already has the controls)
-  justSentFile = file.name;
-
-  const formData = new FormData();
-  formData.append("video", file);
-
-  const xhr = new XMLHttpRequest();
-  xhr.open("POST", "/upload");
-
-  // ── Live progress ────────────────────────────────────────────────────────
-  xhr.upload.addEventListener("progress", (e) => {
-    if (!e.lengthComputable) return;
-    const pct = Math.round((e.loaded / e.total) * 100);
-    setUploadProgress(pct, `Uploading… ${formatBytes(e.loaded)} / ${formatBytes(e.total)}`, "");
-  });
-
-  // ── Success ──────────────────────────────────────────────────────────────
-  xhr.addEventListener("load", () => {
-    if (xhr.status >= 200 && xhr.status < 300) {
-      let resp = {};
-      try { resp = JSON.parse(xhr.responseText); } catch {}
-      setUploadProgress(100, `✔ Playing on TV — ${resp.filename || file.name}`, "done");
-      // Refresh the library so the file appears in the list
-      loadServerVideos();
-      // Auto-hide the progress box after a few seconds
-      setTimeout(() => { uploadBox.hidden = true; }, 4000);
-    } else {
-      let msg = `Upload failed (${xhr.status})`;
-      try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
-      setUploadProgress(0, msg, "error");
-      justSentFile = null;
-    }
-  });
-
-  // ── Network error ────────────────────────────────────────────────────────
-  xhr.addEventListener("error", () => {
-    setUploadProgress(0, "Network error — check Wi-Fi and try again.", "error");
-    justSentFile = null;
-  });
-
-  xhr.send(formData);
-}
-
-function setUploadProgress(pct, statusText, statusClass) {
-  uploadBar.style.width   = pct + "%";
-  uploadPct.textContent   = pct + "%";
-  uploadStatus.textContent = statusText;
-  uploadStatus.className  = "upload-status" + (statusClass ? " " + statusClass : "");
-}
-
-function formatBytes(bytes) {
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    §7  Folder picker
@@ -503,13 +318,11 @@ function clearFolderError()   { folderError.hidden = true; folderError.textConte
    ═══════════════════════════════════════════════════════════════════════════ */
 
 let activeFilename = null;
-let isCasting      = false;
 
 function playVideo(filename) {
   activeFilename = filename;
   highlightCard(filename);
   if (isLocalMode && localFiles.has(filename)) playLocalFile(filename);
-  else if (isCasting)                          castVideo(filename);
   else                                         playViaServer(filename);
 }
 
@@ -568,60 +381,6 @@ function highlightCard(filename) {
    §9  Chromecast
    ═══════════════════════════════════════════════════════════════════════════ */
 
-window.__onGCastApiAvailable = function (ok) { if (ok) initCast(); };
-
-function initCast() {
-  const ctx = cast.framework.CastContext.getInstance();
-  ctx.setOptions({
-    receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
-    autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
-  });
-  ctx.addEventListener(
-    cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-    (ev) => {
-      const S = cast.framework.SessionState;
-      if (ev.sessionState === S.SESSION_STARTED || ev.sessionState === S.SESSION_RESUMED) {
-        isCasting = true;
-        setCastStatus(true, "Connected");
-        if (activeFilename && !isLocalMode) castVideo(activeFilename);
-      } else if (ev.sessionState === S.SESSION_ENDED || ev.sessionState === S.SESSION_START_FAILED) {
-        isCasting = false;
-        setCastStatus(false, "");
-        if (activeFilename) playViaServer(activeFilename);
-      }
-    }
-  );
-}
-
-function setCastStatus(on, msg) {
-  const el = document.getElementById("castStatus");
-  if (!el) return;
-  el.textContent = msg;
-  el.className   = "cast-status" + (on ? " connected" : "");
-}
-
-function castVideo(filename) {
-  if (isLocalMode) {
-    alert("Local files can't be cast. Upload via 📤 first (or use the path input) so the TV can reach it.");
-    return;
-  }
-  const session = cast.framework.CastContext.getInstance().getCurrentSession();
-  if (!session) { playViaServer(filename); return; }
-
-  const ext     = filename.split(".").pop().toLowerCase();
-  const mime    = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
-  const url     = `${window.location.origin}/video/${encodeURIComponent(filename)}`;
-  const info    = new chrome.cast.media.MediaInfo(url, mime[ext] || "video/mp4");
-  info.metadata = new chrome.cast.media.GenericMediaMetadata();
-  info.metadata.title = filename.replace(/\.[^.]+$/, "");
-
-  const req  = new chrome.cast.media.LoadRequest(info);
-  req.autoplay = true;
-  session.loadMedia(req).then(
-    () => setNowPlaying(`📺 Casting: ${filename}`),
-    (code) => { alert(`Cast error ${code}`); playViaServer(filename); }
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    §10 Boot
@@ -635,7 +394,6 @@ refreshBtn.addEventListener("click", async () => {
 
 window.addEventListener("load", () => {
   initPlayer();
-  connectSSE();          // subscribe to push events (TV listens, phone triggers)
   loadCurrentVideoDir();
   loadServerVideos();
 });
