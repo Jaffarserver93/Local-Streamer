@@ -6,57 +6,43 @@
   <meta name="theme-color" content="#121212" />
   <title>📺 Local Stream</title>
 
-  <!-- Video.js v8 (latest stable from official CDN — v10 is not yet released) -->
+  <!-- Video.js v8 (latest stable, from official CDN) -->
   <link href="https://vjs.zencdn.net/8.23.9/video-js.css" rel="stylesheet" />
-
   <link rel="stylesheet" href="/style.css" />
 
   <!--
-    Google Cast Sender SDK v3 (CAF).
-    Must be in <head> so window.__onGCastApiAvailable is registered before the
-    SDK fires its callback. loadCastFramework=1 loads the v3 CAF layer.
+    Google Cast Sender SDK v3.
+    Must be in <head> so __onGCastApiAvailable is registered before the callback fires.
   -->
   <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
 </head>
 <body>
 
-  <!-- ── App Header ──────────────────────────────────────────────────────── -->
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
   <header class="app-header">
     <span class="logo">📺</span>
     <h1>Local Stream</h1>
-    <span class="header-right">
+    <div class="header-right">
+      <span id="sseIndicator" class="sse-dot" title="Waiting for connection…"></span>
       <button id="folderToggleBtn" class="icon-btn" title="Change video folder">📁</button>
-    </span>
+    </div>
   </header>
 
-  <!-- ── Folder Picker Panel (collapsed by default) ─────────────────────── -->
+  <!-- ── Folder Panel ─────────────────────────────────────────────────────── -->
   <div id="folderPanel" class="folder-panel" hidden>
     <div class="folder-panel-inner">
       <p class="folder-panel-title">Video Source</p>
-
-      <!-- Option A: browser-side folder picker (works on localhost / HTTPS) -->
       <div class="folder-option">
-        <button id="browseBtn" class="browse-btn">
-          <span>🗂</span> Browse &amp; pick folder
-        </button>
-        <span class="folder-note">Plays locally on this device (no network share)</span>
+        <button id="browseBtn" class="browse-btn">🗂 Browse &amp; pick folder</button>
+        <span class="folder-note">Local playback only (localhost / https)</span>
       </div>
-
       <div class="folder-divider"><span>or type a server path</span></div>
-
-      <!-- Option B: server-side path (works over the network, enables TV + Cast) -->
       <div class="folder-option folder-path-row">
-        <input
-          id="folderPathInput"
-          class="folder-path-input"
-          type="text"
-          placeholder="/sdcard/Download   or   /home/user/Videos"
-          spellcheck="false"
-          autocomplete="off"
-        />
+        <input id="folderPathInput" class="folder-path-input" type="text"
+          placeholder="/sdcard/Download  or  /home/user/Videos"
+          spellcheck="false" autocomplete="off" />
         <button id="setFolderBtn" class="set-folder-btn">Apply</button>
       </div>
-
       <p id="folderCurrentPath" class="folder-current-path"></p>
       <p id="folderError" class="folder-error" hidden></p>
     </div>
@@ -64,29 +50,13 @@
 
   <main class="app-main">
 
-    <!-- ── Player Section ─────────────────────────────────────────────────── -->
+    <!-- ── Player ──────────────────────────────────────────────────────────── -->
     <section class="player-section">
       <div class="player-wrapper">
+        <video id="videoPlayer" class="video-js vjs-default-skin"
+          preload="metadata" playsinline></video>
 
-        <!--
-          Video.js v10 target element.
-          The `video-js` class activates Video.js styles.
-          data-setup="{}" would also work but we init via JS for more control.
-        -->
-        <video
-          id="videoPlayer"
-          class="video-js vjs-default-skin"
-          preload="metadata"
-          playsinline
-        ></video>
-
-        <!--
-          Double-click / double-tap seek overlays.
-          Divided into left (−5 s) and right (+5 s) halves.
-          They sit on top of the Video.js player; pointer-events are none
-          by default and only enabled momentarily during animation so they
-          don't swallow control-bar clicks.
-        -->
+        <!-- Double-click / arrow-key seek overlays -->
         <div id="seekOverlayLeft"  class="seek-overlay seek-left"  aria-hidden="true">
           <div class="seek-ripple"></div>
           <div class="seek-label"><span class="seek-arrows">◀◀</span><span class="seek-secs">5 sec</span></div>
@@ -96,21 +66,54 @@
           <div class="seek-label"><span class="seek-secs">5 sec</span><span class="seek-arrows">▶▶</span></div>
         </div>
 
-        <!-- Placeholder shown when nothing is loaded -->
         <div id="playerPlaceholder" class="player-placeholder">
           <div class="placeholder-icon">▶</div>
-          <p>Pick a video below to play</p>
+          <p>Pick a video below, or send one from your phone</p>
         </div>
       </div>
 
-      <!-- Now-playing strip -->
       <div id="nowPlaying" class="now-playing" hidden>
         <span class="now-playing-label">NOW PLAYING</span>
         <span id="nowPlayingName" class="now-playing-name"></span>
       </div>
     </section>
 
-    <!-- ── Chromecast ──────────────────────────────────────────────────────── -->
+    <!-- ══════════════════════════════════════════════════════════════════════
+         SEND TO TV — the main feature.
+         Phone opens this site, taps this button, picks a video from storage.
+         The file uploads to the server and instantly plays on the TV.
+    ═══════════════════════════════════════════════════════════════════════ -->
+    <section class="send-section">
+      <!--
+        Hidden file input — triggered by the button below.
+        accept="video/*" opens the phone's native video picker
+        (Camera Roll on iOS, Videos/Downloads on Android).
+      -->
+      <input id="fileInput" type="file" accept="video/*,video/mp4,video/mkv,video/webm"
+        style="display:none" />
+
+      <button id="sendToTvBtn" class="send-btn">
+        <span class="send-btn-icon">📤</span>
+        <span class="send-btn-text">
+          <strong>Send Video to TV</strong>
+          <small>Pick from your phone — plays on TV instantly</small>
+        </span>
+      </button>
+
+      <!-- Upload progress (hidden until upload starts) -->
+      <div id="uploadBox" class="upload-box" hidden>
+        <div class="upload-top">
+          <span id="uploadFileName" class="upload-filename"></span>
+          <span id="uploadPct" class="upload-pct">0%</span>
+        </div>
+        <div class="upload-track">
+          <div id="uploadBar" class="upload-bar" style="width:0%"></div>
+        </div>
+        <p id="uploadStatus" class="upload-status">Uploading…</p>
+      </div>
+    </section>
+
+    <!-- ── Cast ─────────────────────────────────────────────────────────────── -->
     <section class="cast-section">
       <div class="cast-row">
         <span class="cast-label">Cast to TV:</span>
@@ -119,7 +122,7 @@
       </div>
     </section>
 
-    <!-- ── Video Library ───────────────────────────────────────────────────── -->
+    <!-- ── Library ──────────────────────────────────────────────────────────── -->
     <section class="library-section">
       <div class="library-header">
         <h2>Library</h2>
@@ -133,12 +136,12 @@
 
   <footer class="app-footer">
     <p>
-      Put videos in <code>videos/</code> on the server, or tap 📁 to change the folder.
-      <br/>Left/Right arrow keys or double-tap sides of player to seek ±5 s.
+      Same Wi-Fi? Open <code>http://&lt;server-ip&gt;:3000</code> on any device.
+      Tap 📤 on your phone to pick a video — it plays on the TV automatically.
     </p>
   </footer>
 
-  <!-- Video.js v8 (latest stable) -->
+  <!-- Video.js v8 -->
   <script src="https://vjs.zencdn.net/8.23.9/video.min.js"></script>
   <script src="/script.js"></script>
 </body>
