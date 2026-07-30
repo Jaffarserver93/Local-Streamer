@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { rm, copyFile } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -11,8 +11,17 @@ globalThis.require = createRequire(import.meta.url);
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function buildAll() {
-  const distDir = path.resolve(artifactDir, "dist");
+  const distDir   = path.resolve(artifactDir, "dist");
+  const publicDir = path.resolve(artifactDir, "public");
   await rm(distDir, { recursive: true, force: true });
+
+  // Copy the socket.io browser client from node_modules into public/ so it is
+  // served as a plain static file. The Replit proxy blocks /socket.io/* paths,
+  // and this also guarantees the client version always matches the server.
+  const socketIoSrc  = path.resolve(artifactDir, "node_modules/socket.io/client-dist/socket.io.min.js");
+  const socketIoDest = path.resolve(publicDir, "socket.io.min.js");
+  await copyFile(socketIoSrc, socketIoDest);
+  console.log("✓ Copied socket.io.min.js to public/");
 
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],

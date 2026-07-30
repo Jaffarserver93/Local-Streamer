@@ -107,6 +107,12 @@ let player = null;
  */
 let applyingSync = false;
 
+/**
+ * Holds a "play" event that arrived before Video.js was ready.
+ * Applied immediately once the player reports ready.
+ */
+let pendingSync = null;
+
 /** POST a sync command to the server (fire-and-forget). */
 function postSync(url, body) {
   fetch(url, {
@@ -136,6 +142,13 @@ function initPlayer() {
   player.ready(() => {
     initSeekOverlays();
     initKeyboardSeek();
+
+    // Flush any sync event that arrived before the player was ready
+    if (pendingSync) {
+      const snap = pendingSync;
+      pendingSync = null;
+      applyPlayEvent(snap);
+    }
 
     // ── Scrub-while-dragging broadcast ────────────────────────────────────────
     // Fire seek updates every 80 ms while the user is dragging the scrubber,
@@ -220,6 +233,16 @@ function applyPosition(position, serverTime, paused) {
 
 socket.on("play", ({ filename, position = 0, serverTime = Date.now(), paused = false }) => {
   if (!filename) return;
+  if (!player) {
+    // Player not initialised yet (socket connected before window.load finished).
+    // Store and replay once player.ready() fires.
+    pendingSync = { filename, position, serverTime, paused };
+    return;
+  }
+  applyPlayEvent({ filename, position, serverTime, paused });
+});
+
+function applyPlayEvent({ filename, position, serverTime, paused }) {
   applyingSync = true;
   playViaServer(filename).then(() => {
     applyPosition(position, serverTime, paused);
@@ -229,7 +252,7 @@ socket.on("play", ({ filename, position = 0, serverTime = Date.now(), paused = f
     }
     setTimeout(() => { applyingSync = false; }, 300);
   });
-});
+}
 
 socket.on("pause", ({ position, serverTime = Date.now() }) => {
   if (!player || !activeFilename) return;
