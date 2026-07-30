@@ -17,6 +17,7 @@
     <span class="logo">📺</span>
     <h1>Local Stream</h1>
     <div class="header-right">
+      <span id="syncIndicator" class="sync-indicator" title="Sync status">⚡</span>
       <button id="folderToggleBtn" class="icon-btn" title="Change video folder">📁</button>
     </div>
   </header>
@@ -92,12 +93,14 @@
 
   <footer class="app-footer">
     <p>
-      Same Wi-Fi? Open <code>http://&lt;server-ip&gt;:&lt;port&gt;</code> on any device to stream videos.
+      Same Wi-Fi? Open <code>http://&lt;server-ip&gt;:&lt;port&gt;</code> on any device — everyone syncs automatically.
     </p>
   </footer>
 
   <!-- Video.js v8 - served locally -->
   <script src="/video.min.js"></script>
+  <!-- Socket.io client - served as a local static file (proxy blocks /socket.io/ path) -->
+  <script src="/socket.io.min.js"></script>
   <script src="/script.js"></script>
 </body>
 </html>

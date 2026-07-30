@@ -2,21 +2,29 @@
  * videos.ts
  *
  * Routes:
- *   GET  /events              — SSE stream; all clients subscribe here
- *   POST /api/play            — broadcast "play <filename>" to ALL connected clients instantly
  *   GET  /api/videos          — list video files in currentVideoDir
  *   GET  /api/video-dir       — return currentVideoDir path
  *   POST /api/set-video-dir   — change currentVideoDir at runtime
+ *   POST /api/play            — broadcast "play" to ALL connected clients
+ *   POST /api/pause           — broadcast "pause"
+ *   POST /api/resume          — broadcast "resume"
+ *   POST /api/seek            — broadcast "seek"
+ *   POST /api/upload          — upload a video file to the library
  *   GET  /video/:filename     — HTTP 206 Range streaming
+ *
+ * Socket.io replaces SSE for real-time sync. All state changes are broadcast
+ * via io.emit() which Socket.io delivers over WebSocket in <10 ms.
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
+import { type Server as IOServer } from "socket.io";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { spawn } from "node:child_process";
 import multer from "multer";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -24,13 +32,14 @@ const __dirname = dirname(__filename);
  * VIDEO_DIR — folder the server reads & writes video files from/to.
  * Change at runtime via POST /api/set-video-dir.
  *
- *   VIDEO_DIR=/sdcard/Download node dist/index.mjs   # Android
- *   VIDEO_DIR=/Volumes/USB/Movies node dist/index.mjs # macOS external drive
+ *   VIDEO_DIR=/sdcard/Download node dist/index.mjs      # Android – Downloads
+ *   VIDEO_DIR=/sdcard/MOVIEBOX  node dist/index.mjs      # Android – MovieBox
+ *   VIDEO_DIR=/Volumes/USB/Movies node dist/index.mjs    # macOS external drive
  */
 let currentVideoDir: string =
   process.env["VIDEO_DIR"] ?? path.join(__dirname, "..", "videos");
 
-// All extensions we can stream directly (browser-native)
+// All extensions we can stream directly (browser-native or via transcode)
 const MIME_TYPES: Record<string, string> = {
   ".mp4":  "video/mp4",
   ".m4v":  "video/mp4",
@@ -47,54 +56,65 @@ const MIME_TYPES: Record<string, string> = {
   ".m2ts": "video/mp2t",
   ".mts":  "video/mp2t",
 };
-// Extensions that Chrome/Safari can play natively — no transcode needed
-const NATIVE_EXTS = new Set([".mp4", ".m4v", ".webm", ".mov"]);
+
+const NATIVE_EXTS   = new Set([".mp4", ".m4v", ".webm", ".mov"]);
 const SUPPORTED_EXTS = new Set(Object.keys(MIME_TYPES));
-const DEFAULT_CHUNK = 1024 * 1024; // 1 MB
+const DEFAULT_CHUNK  = 1024 * 1024; // 1 MB per Range request chunk
 
-// ─── Current playback state ───────────────────────────────────────────────────
-/** Tracks what's currently playing so new tabs can join mid-stream in sync */
-let nowPlaying: {
-  filename: string;
-  paused: boolean;
-  position: number;    // seconds at the time positionAt was recorded
-  positionAt: number;  // server ms timestamp when position was last recorded
-} | null = null;
+// ── Global playback state ──────────────────────────────────────────────────────
+/**
+ * Single in-memory session shared by all connected devices.
+ * New tabs receive this state on connect so they jump straight to the right
+ * video and position without any manual "join room" step.
+ */
+let globalState = {
+  currentVideo:          null as string | null,
+  isPlaying:             false,
+  lastPosition:          0,          // seconds at the time lastUpdatedServerTime was recorded
+  lastUpdatedServerTime: Date.now(), // server ms timestamp of last position update
+};
 
-/** Calculate the live playback position right now */
-function livePosition(): number {
-  if (!nowPlaying) return 0;
-  if (nowPlaying.paused) return nowPlaying.position;
-  return nowPlaying.position + (Date.now() - nowPlaying.positionAt) / 1000;
+/** Calculate the live playback position right now (accounts for elapsed time). */
+export function livePosition(): number {
+  if (!globalState.currentVideo) return 0;
+  if (!globalState.isPlaying)    return globalState.lastPosition;
+  return globalState.lastPosition + (Date.now() - globalState.lastUpdatedServerTime) / 1000;
 }
 
-// ─── ffmpeg transcoding ───────────────────────────────────────────────────────
+export function getGlobalState() { return globalState; }
+
+// ── Socket.io instance ─────────────────────────────────────────────────────────
+let io: IOServer | null = null;
+
+/** Called from index.ts after the Socket.io server is created. */
+export function setIO(ioInstance: IOServer): void {
+  io = ioInstance;
+}
+
 /**
- * Transcode any video to a browser-safe H.264 MP4.
- * Handles rotation metadata, HEVC, AVI, MKV, MOV, etc.
+ * Broadcast a named event with payload to ALL connected clients simultaneously.
+ * This is how one phone's tap instantly controls every TV and other phone.
  */
+function broadcast(event: string, data: unknown): void {
+  io?.emit(event, data);
+}
+
+// ── ffmpeg transcoding ─────────────────────────────────────────────────────────
 function transcodeToMp4(input: string, output: string): Promise<void> {
   return new Promise((resolve, reject) => {
     let proc: ReturnType<typeof spawn>;
     try {
       proc = spawn("ffmpeg", [
         "-i", input,
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "23",
-        "-c:a", "aac",
-        "-b:a", "128k",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart",
-        "-y",
-        output,
+        "-y", output,
       ]);
-    } catch (e) {
-      reject(e);
-      return;
-    }
+    } catch (e) { reject(e); return; }
     proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`)));
     proc.on("error", (e: NodeJS.ErrnoException) => {
-      if (e.code === "ENOENT") reject(new Error("ffmpeg not found — install it with: pkg install ffmpeg"));
+      if (e.code === "ENOENT") reject(new Error("ffmpeg not found — install it: pkg install ffmpeg"));
       else reject(e);
     });
   });
@@ -107,27 +127,7 @@ const STREAM_CORS: Record<string, string> = {
     "Content-Range, Accept-Ranges, Content-Length, Content-Type",
 };
 
-// ─── SSE client registry ──────────────────────────────────────────────────────
-/** Every connected browser tab (TV and phone) gets one Response entry here */
-const sseClients = new Set<Response>();
-
-/**
- * Push an event to ALL connected clients simultaneously.
- * This is how the phone triggers playback on the TV.
- */
-function broadcast(event: string, data: unknown): void {
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const client of sseClients) {
-    try {
-      client.write(payload);
-    } catch {
-      // Client disconnected; remove silently
-      sseClients.delete(client);
-    }
-  }
-}
-
-// ─── Multer upload config ─────────────────────────────────────────────────────
+// ── Multer upload config ───────────────────────────────────────────────────────
 const storage = multer.diskStorage({
   destination(_req, _file, cb) {
     if (!fs.existsSync(currentVideoDir)) {
@@ -146,161 +146,72 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 * 1024 }, // 20 GB — accept all video files
+  limits: { fileSize: 20 * 1024 * 1024 * 1024 }, // 20 GB
 });
 
 const router: IRouter = Router();
 
-// ─── GET /events ─────────────────────────────────────────────────────────────
+// ── POST /api/play ─────────────────────────────────────────────────────────────
 /**
- * Server-Sent Events stream.
- *
- * Both the TV and the phone subscribe here on page load.
- * When the phone uploads a file or taps "Play on TV", the server broadcasts
- * a "play" event and every connected screen receives it instantly.
- *
- * EventSource auto-reconnects natively (no client-side retry logic needed).
- */
-router.get("/events", (req: Request, res: Response) => {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no", // disable nginx/proxy buffering
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Expose-Headers": "Content-Type",
-  });
-
-  // Tell the browser to reconnect after 3 s if the connection drops
-  res.write("retry: 3000\n\n");
-  res.write(":connected\n\n");
-
-  // Catch up new viewers: send current filename + position + pause state
-  if (nowPlaying) {
-    res.write(`event: play\ndata: ${JSON.stringify({
-      filename: nowPlaying.filename,
-      seek: livePosition(),
-      paused: nowPlaying.paused,
-    })}\n\n`);
-  }
-
-  sseClients.add(res);
-
-  // Heartbeat every 25 s — prevents proxies from closing idle connections
-  const heartbeat = setInterval(() => {
-    try {
-      res.write(":heartbeat\n\n");
-    } catch {
-      clearInterval(heartbeat);
-      sseClients.delete(res);
-    }
-  }, 25_000);
-
-  req.on("close", () => {
-    clearInterval(heartbeat);
-    sseClients.delete(res);
-  });
-});
-
-// ─── POST /api/upload ────────────────────────────────────────────────────────
-/**
- * Upload a video to the server library.
- * Once saved to disk it shows in the library for everyone and can be
- * broadcast-played instantly with POST /api/play.
- */
-router.post("/api/upload", (req: Request, res: Response) => {
-  upload.single("video")(req, res, (err: unknown) => {
-    if (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
-      return;
-    }
-    const file = (req as Request & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ error: "No file received." });
-      return;
-    }
-
-    const ext = path.extname(file.filename).toLowerCase();
-    const needsTranscode = !NATIVE_EXTS.has(ext);
-
-    if (!needsTranscode) {
-      // Already browser-safe — available immediately
-      broadcast("library-updated", {});
-      res.json({ success: true, filename: file.filename, transcoding: false });
-      return;
-    }
-
-    // Transcode to H.264 MP4 in the background; respond immediately so the
-    // browser doesn't time out on large files
-    const mp4Name = file.filename.replace(/\.[^.]+$/, "") + ".mp4";
-    const mp4Path = path.join(currentVideoDir, mp4Name);
-    res.json({ success: true, filename: mp4Name, transcoding: true });
-
-    transcodeToMp4(file.path, mp4Path)
-      .then(() => {
-        fs.unlink(file.path, () => {}); // remove original
-        broadcast("library-updated", {});
-      })
-      .catch((e) => {
-        console.error("Transcode failed:", e);
-        // Keep the original so the user can try again
-        broadcast("library-updated", {});
-      });
-  });
-});
-
-// ─── POST /api/play ───────────────────────────────────────────────────────────
-/**
- * Remote-control endpoint: phone taps "▶ Play on TV" next to a library card
- * and the server broadcasts a "play" event to ALL connected screens.
- * No file transfer happens here — just a play command for an existing server file.
+ * Phone taps a library card → POST /api/play → broadcast to all screens.
+ * Includes serverTime so clients can apply NTP-corrected position offset.
  */
 router.post("/api/play", (req: Request, res: Response) => {
-  const body = req.body as Record<string, unknown>;
+  const body     = req.body as Record<string, unknown>;
   const filename = body["filename"];
+  const position = Number(body["position"]) || 0;
 
   if (!filename || typeof filename !== "string") {
     res.status(400).json({ error: "Body must contain { filename: string }" });
     return;
   }
 
-  nowPlaying = { filename, paused: false, position: 0, positionAt: Date.now() };
-  broadcast("play", { filename });
-  res.json({ success: true, clients: sseClients.size });
+  const now = Date.now();
+  globalState = { currentVideo: filename, isPlaying: true, lastPosition: position, lastUpdatedServerTime: now };
+  broadcast("play", { filename, position, serverTime: now, paused: false });
+  res.json({ success: true });
 });
 
-// ─── POST /api/pause ─────────────────────────────────────────────────────────
+// ── POST /api/pause ────────────────────────────────────────────────────────────
 router.post("/api/pause", (req: Request, res: Response) => {
   const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
-  if (nowPlaying) { nowPlaying.paused = true; nowPlaying.position = position; nowPlaying.positionAt = Date.now(); }
-  broadcast("pause", { position });
+  const now = Date.now();
+  globalState.isPlaying = false;
+  globalState.lastPosition = position;
+  globalState.lastUpdatedServerTime = now;
+  broadcast("pause", { position, serverTime: now });
   res.json({ success: true });
 });
 
-// ─── POST /api/resume ────────────────────────────────────────────────────────
+// ── POST /api/resume ───────────────────────────────────────────────────────────
 router.post("/api/resume", (req: Request, res: Response) => {
   const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
-  if (nowPlaying) { nowPlaying.paused = false; nowPlaying.position = position; nowPlaying.positionAt = Date.now(); }
-  broadcast("resume", { position });
+  const now = Date.now();
+  globalState.isPlaying = true;
+  globalState.lastPosition = position;
+  globalState.lastUpdatedServerTime = now;
+  broadcast("resume", { position, serverTime: now });
   res.json({ success: true });
 });
 
-// ─── POST /api/seek ──────────────────────────────────────────────────────────
+// ── POST /api/seek ─────────────────────────────────────────────────────────────
 router.post("/api/seek", (req: Request, res: Response) => {
   const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
-  if (nowPlaying) { nowPlaying.position = position; nowPlaying.positionAt = Date.now(); }
-  broadcast("seek", { position });
+  const now = Date.now();
+  globalState.lastPosition = position;
+  globalState.lastUpdatedServerTime = now;
+  broadcast("seek", { position, serverTime: now });
   res.json({ success: true });
 });
 
-// ─── GET /api/video-dir ───────────────────────────────────────────────────────
+// ── GET /api/video-dir ─────────────────────────────────────────────────────────
 router.get("/api/video-dir", (_req: Request, res: Response) => {
   res.json({ path: currentVideoDir });
 });
 
-// ─── POST /api/set-video-dir ──────────────────────────────────────────────────
+// ── POST /api/set-video-dir ────────────────────────────────────────────────────
 router.post("/api/set-video-dir", (req: Request, res: Response) => {
-  const body = req.body as Record<string, unknown>;
+  const body    = req.body as Record<string, unknown>;
   const newPath = body["path"];
 
   if (!newPath || typeof newPath !== "string" || !newPath.trim()) {
@@ -322,7 +233,7 @@ router.post("/api/set-video-dir", (req: Request, res: Response) => {
   res.json({ success: true, path: currentVideoDir });
 });
 
-// ─── GET /api/videos ─────────────────────────────────────────────────────────
+// ── GET /api/videos ────────────────────────────────────────────────────────────
 router.get("/api/videos", (_req: Request, res: Response) => {
   if (!fs.existsSync(currentVideoDir)) {
     res.status(404).json({
@@ -349,17 +260,48 @@ router.get("/api/videos", (_req: Request, res: Response) => {
   res.json(videos);
 });
 
-// ─── GET /video/:filename ─────────────────────────────────────────────────────
+// ── POST /api/upload ───────────────────────────────────────────────────────────
+router.post("/api/upload", (req: Request, res: Response) => {
+  upload.single("video")(req, res, (err: unknown) => {
+    if (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: "No file received." });
+      return;
+    }
+
+    const ext          = path.extname(file.filename).toLowerCase();
+    const needsTranscode = !NATIVE_EXTS.has(ext);
+
+    if (!needsTranscode) {
+      broadcast("library-updated", {});
+      res.json({ success: true, filename: file.filename, transcoding: false });
+      return;
+    }
+
+    const mp4Name = file.filename.replace(/\.[^.]+$/, "") + ".mp4";
+    const mp4Path = path.join(currentVideoDir, mp4Name);
+    res.json({ success: true, filename: mp4Name, transcoding: true });
+
+    transcodeToMp4(file.path, mp4Path)
+      .then(() => { fs.unlink(file.path, () => {}); broadcast("library-updated", {}); })
+      .catch((e) => { console.error("Transcode failed:", e); broadcast("library-updated", {}); });
+  });
+});
+
+// ── GET /video/:filename ───────────────────────────────────────────────────────
 /**
- * HTTP 206 Range streaming. Required for:
- *   • Video seeking in all browsers
- *   • Smart TV compatibility
- *   • Chromecast (Cast SDK only uses Range requests)
+ * HTTP 206 Range streaming.
+ * Required for: video seeking in all browsers, Smart TV compatibility,
+ * and Chromecast (Cast SDK only uses Range requests).
  */
 router.get("/video/:filename", (req: Request, res: Response) => {
-  const safeName = path.basename(req.params["filename"] ?? "");
+  const safeName  = path.basename(req.params["filename"] ?? "");
   const videoPath = path.join(currentVideoDir, safeName);
-  const ext = path.extname(safeName).toLowerCase();
+  const ext       = path.extname(safeName).toLowerCase();
 
   if (!SUPPORTED_EXTS.has(ext)) {
     res.status(400).json({ error: `Unsupported type "${ext}".` });
@@ -371,13 +313,13 @@ router.get("/video/:filename", (req: Request, res: Response) => {
   }
 
   const { size: fileSize } = fs.statSync(videoPath);
-  const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-  const rangeHeader = req.headers["range"];
+  const contentType        = MIME_TYPES[ext] ?? "application/octet-stream";
+  const rangeHeader        = req.headers["range"];
 
   if (rangeHeader) {
     const [s, e] = rangeHeader.replace(/bytes=/, "").split("-");
-    const start = parseInt(s ?? "0", 10);
-    const end = e ? parseInt(e, 10) : Math.min(start + DEFAULT_CHUNK - 1, fileSize - 1);
+    const start  = parseInt(s ?? "0", 10);
+    const end    = e ? parseInt(e, 10) : Math.min(start + DEFAULT_CHUNK - 1, fileSize - 1);
 
     if (isNaN(start) || isNaN(end) || start < 0 || end >= fileSize || start > end) {
       res.setHeader("Content-Range", `bytes */${fileSize}`);
@@ -386,10 +328,10 @@ router.get("/video/:filename", (req: Request, res: Response) => {
     }
 
     res.writeHead(206, {
-      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-      "Accept-Ranges": "bytes",
+      "Content-Range":  `bytes ${start}-${end}/${fileSize}`,
+      "Accept-Ranges":  "bytes",
       "Content-Length": end - start + 1,
-      "Content-Type": contentType,
+      "Content-Type":   contentType,
       ...STREAM_CORS,
     });
 
@@ -399,11 +341,10 @@ router.get("/video/:filename", (req: Request, res: Response) => {
   } else {
     res.writeHead(200, {
       "Content-Length": fileSize,
-      "Content-Type": contentType,
-      "Accept-Ranges": "bytes",
+      "Content-Type":   contentType,
+      "Accept-Ranges":  "bytes",
       ...STREAM_CORS,
     });
-
     const stream = fs.createReadStream(videoPath);
     stream.pipe(res);
     stream.on("error", (err) => { if (!res.writableEnded) res.destroy(err as Error); });

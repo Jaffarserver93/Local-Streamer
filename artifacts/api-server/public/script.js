@@ -1,51 +1,113 @@
 /**
  * script.js — Local Stream
  *
- * ─── How "Send to TV" works ───────────────────────────────────────────────────
+ * ─── How synchronized playback works ─────────────────────────────────────────
  *
- *   PHONE                              SERVER                    TV
- *   ─────                              ──────                    ──
- *   Tap "📤 Send to TV"
- *   → pick video from storage
- *   → XHR POST /upload ──────────────► save to disk
- *                                      broadcast SSE "play" ───► receive "play" event
- *                                                                 videojs.src(url)
- *                                                                 videojs.play()
+ *   Any device on the page automatically joins the single global session.
+ *   When ANY user taps a video or hits play/pause/seek, that action is
+ *   broadcast via Socket.io to every connected device simultaneously.
  *
- *   Tap "▶ Play on TV" (library card)
- *   → POST /api/play ────────────────► broadcast SSE "play" ───► auto-plays
+ *   CLOCK SYNC (NTP-style)
+ *   ──────────────────────
+ *   On connect (and every 30 s), the client sends a ping-sync with its local
+ *   timestamp. The server echoes it back with its own timestamp. The client
+ *   calculates round-trip latency and derives a clock offset so that when the
+ *   server says "position=42.3 at serverTime=T", the client can compute the
+ *   live position as: 42.3 + (serverNow() - T) / 1000  — accurate to <50 ms.
  *
- * ─── SSE connection ───────────────────────────────────────────────────────────
- *   Both TV and phone connect to GET /events on page load.
- *   EventSource auto-reconnects if the connection drops.
+ *   PHONE → SERVER → ALL SCREENS
+ *   ─────────────────────────────
+ *   Tap video card  →  POST /api/play  →  socket.emit("play", ...)  →  all clients
+ *   Tap pause       →  POST /api/pause →  socket.emit("pause", ...) →  all clients
+ *   Seek scrubber   →  POST /api/seek  →  socket.emit("seek", ...)  →  all clients
  *
  * Sections:
- *   §1  Video.js player
- *   §2  Double-click / double-tap ±5 s seek
- *   §3  Keyboard / TV remote arrow-key seek
- *   §4  Server-Sent Events (SSE) — receive play commands from phone
- *   §5  Video library (server-side + local files)
- *   §6  Send-to-TV — file upload from phone
- *   §7  Folder picker
- *   §8  Playback router (local / server / Chromecast)
- *   §9  Chromecast
+ *   §1  Clock sync
+ *   §2  Video.js player
+ *   §3  Socket.io sync listener
+ *   §4  Double-tap ±5 s seek
+ *   §5  Keyboard / TV remote
+ *   §6  Video library
+ *   §7  Upload (Add to library)
+ *   §8  Folder picker
+ *   §9  Playback router
  *   §10 Boot
  */
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   §1  Video.js player
+   §1  Clock sync  (NTP-style offset calculation)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Estimated offset in ms between our clock and the server's clock.
+ *   serverTime ≈ Date.now() + clockOffset
+ * Starts at 0 (assume clocks match) and converges quickly after the first ping.
+ */
+let clockOffset = 0;
+
+/** Returns the current server time estimated from our local clock. */
+function serverNow() {
+  return Date.now() + clockOffset;
+}
+
+/**
+ * Send a ping to the server. Server echoes clientTime + serverTime.
+ * We measure round-trip, halve it to estimate one-way latency, then derive offset.
+ */
+function sendClockPing() {
+  socket.emit("ping-sync", Date.now());
+}
+
+// ── Socket.io connection ───────────────────────────────────────────────────────
+// The socket.io client script is served automatically by the server at
+// /socket.io/socket.io.js — no CDN or bundler needed.
+const socket = io({ transports: ["websocket", "polling"] });
+
+const syncIndicator = document.getElementById("syncIndicator");
+
+socket.on("connect", () => {
+  if (syncIndicator) syncIndicator.title = "Connected ⚡";
+  sendClockPing();
+  // Repeat every 30 s to keep clock offset accurate as clocks drift
+  setInterval(sendClockPing, 30_000);
+});
+
+socket.on("disconnect", () => {
+  if (syncIndicator) syncIndicator.classList.add("disconnected");
+});
+
+socket.on("reconnect", () => {
+  if (syncIndicator) syncIndicator.classList.remove("disconnected");
+  sendClockPing();
+});
+
+socket.on("pong-sync", ({ clientTime, serverTime }) => {
+  const t1  = Date.now();
+  const rtt = t1 - clientTime;          // round-trip latency in ms
+  // Estimate when the server timestamp was recorded: halfway through the RTT
+  const offset = serverTime - clientTime - rtt / 2;
+  // Smooth: blend 80% old + 20% new to avoid jumps from network jitter
+  clockOffset = clockOffset * 0.8 + offset * 0.2;
+  if (syncIndicator) {
+    syncIndicator.title = `Synced ⚡ offset=${Math.round(clockOffset)}ms rtt=${rtt}ms`;
+  }
+});
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   §2  Video.js player
    ═══════════════════════════════════════════════════════════════════════════ */
 
 let player = null;
 
 /**
- * True while we are applying an incoming SSE event.
+ * True while we are applying an incoming Socket.io event.
  * Prevents the player's own event listeners from re-broadcasting the change
  * back to the server and creating an infinite echo loop.
  */
 let applyingSync = false;
 
-/** POST a sync command to the server without awaiting the response. */
+/** POST a sync command to the server (fire-and-forget). */
 function postSync(url, body) {
   fetch(url, {
     method: "POST",
@@ -75,7 +137,6 @@ function initPlayer() {
     initSeekOverlays();
     initKeyboardSeek();
 
-    // ── Broadcast pause / resume / seek to all other clients ──────────────
     let seekBroadcastTimer = null;
 
     player.on("pause", () => {
@@ -90,21 +151,19 @@ function initPlayer() {
 
     player.on("seeked", () => {
       if (applyingSync || !activeFilename) return;
-      // Debounce: only send after the user stops scrubbing
       clearTimeout(seekBroadcastTimer);
       seekBroadcastTimer = setTimeout(() => {
         postSync("/api/seek", { position: player.currentTime() || 0 });
       }, 300);
     });
 
-    // Show a human-readable error if a video fails to load/decode
     player.on("error", () => {
       const err = player.error();
       const msgs = {
         1: "Playback aborted.",
         2: "Network error — check your connection.",
         3: "Video cannot be decoded (unsupported format or corrupt file).",
-        4: "Video format not supported by this browser (try MP4/WebM).",
+        4: "Video format not supported by this browser (try MP4 or WebM).",
       };
       const text = (err && msgs[err.code]) || "Unknown playback error.";
       setNowPlaying("⚠ " + text);
@@ -113,8 +172,78 @@ function initPlayer() {
   });
 }
 
+
 /* ═══════════════════════════════════════════════════════════════════════════
-   §2  Double-click / double-tap ±5 s seek
+   §3  Socket.io sync listener
+   Receives real-time play/pause/seek/library events from the server.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Apply a position from the server, accounting for the clock offset and any
+ * time that has elapsed since the server recorded the state.
+ *
+ * @param {number} position     - position in seconds at the time serverTime was recorded
+ * @param {number} serverTime   - server ms timestamp when position was captured
+ * @param {boolean} paused      - whether the stream is paused
+ */
+function applyPosition(position, serverTime, paused) {
+  if (!player) return;
+  const livePos = paused
+    ? position
+    : position + (serverNow() - serverTime) / 1000;
+  const clamped = Math.max(0, livePos);
+  if (player.readyState() >= 1) {
+    player.currentTime(clamped);
+  } else {
+    player.one("loadedmetadata", () => player.currentTime(clamped));
+  }
+}
+
+socket.on("play", ({ filename, position = 0, serverTime = Date.now(), paused = false }) => {
+  if (!filename) return;
+  applyingSync = true;
+  playViaServer(filename).then(() => {
+    applyPosition(position, serverTime, paused);
+    if (paused) {
+      if (player.readyState() >= 1) player.pause();
+      else player.one("loadedmetadata", () => { applyingSync = true; player.pause(); });
+    }
+    setTimeout(() => { applyingSync = false; }, 300);
+  });
+});
+
+socket.on("pause", ({ position, serverTime = Date.now() }) => {
+  if (!player || !activeFilename) return;
+  applyingSync = true;
+  if (position != null) player.currentTime(position);
+  player.pause();
+  setTimeout(() => { applyingSync = false; }, 150);
+});
+
+socket.on("resume", ({ position, serverTime = Date.now() }) => {
+  if (!player || !activeFilename) return;
+  applyingSync = true;
+  // Apply live position: account for time elapsed since the server recorded it
+  const livePos = position + (serverNow() - serverTime) / 1000;
+  player.currentTime(Math.max(0, livePos));
+  player.play().catch(() => {});
+  setTimeout(() => { applyingSync = false; }, 200);
+});
+
+socket.on("seek", ({ position, serverTime = Date.now() }) => {
+  if (!player || !activeFilename) return;
+  applyingSync = true;
+  player.currentTime(Math.max(0, position));
+  player.one("seeked", () => { applyingSync = false; });
+});
+
+socket.on("library-updated", () => {
+  loadServerVideos();
+});
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   §4  Double-click / double-tap ±5 s seek
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const SEEK_S = 5;
@@ -147,8 +276,9 @@ function flashOverlay(isForward) {
   seekTimer = setTimeout(() => el.classList.remove("active"), 650);
 }
 
+
 /* ═══════════════════════════════════════════════════════════════════════════
-   §3  Keyboard / TV remote arrow keys
+   §5  Keyboard / TV remote arrow keys
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function initKeyboardSeek() {
@@ -171,87 +301,14 @@ function initKeyboardSeek() {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   §4  Server-Sent Events — receive play commands broadcast from any client
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-(function initSSE() {
-  const es = new EventSource("/events");
-
-  es.addEventListener("play", (e) => {
-    try {
-      const { filename, seek, paused } = JSON.parse(e.data);
-      if (!filename) return;
-      applyingSync = true;
-      playViaServer(filename).then(() => {
-        const applyState = () => {
-          if (seek && seek > 0.5) player.currentTime(seek);
-          if (paused) {
-            player.pause();
-          }
-          setTimeout(() => { applyingSync = false; }, 200);
-        };
-        // readyState >= 1 means metadata is already available
-        if (player.readyState() >= 1) {
-          applyState();
-        } else {
-          player.one("loadedmetadata", applyState);
-        }
-      });
-    } catch {}
-  });
-
-  es.addEventListener("pause", (e) => {
-    try {
-      if (!player || !activeFilename) return;
-      const { position } = JSON.parse(e.data);
-      applyingSync = true;
-      if (position != null) player.currentTime(position);
-      player.pause();
-      setTimeout(() => { applyingSync = false; }, 150);
-    } catch {}
-  });
-
-  es.addEventListener("resume", (e) => {
-    try {
-      if (!player || !activeFilename) return;
-      const { position } = JSON.parse(e.data);
-      applyingSync = true;
-      if (position != null) player.currentTime(position);
-      player.play().catch(() => {});
-      setTimeout(() => { applyingSync = false; }, 200);
-    } catch {}
-  });
-
-  es.addEventListener("seek", (e) => {
-    try {
-      if (!player || !activeFilename) return;
-      const { position } = JSON.parse(e.data);
-      applyingSync = true;
-      player.currentTime(position);
-      player.one("seeked", () => { applyingSync = false; });
-    } catch {}
-  });
-
-  es.addEventListener("library-updated", () => {
-    loadServerVideos();
-  });
-
-  es.onerror = () => {
-    // EventSource auto-reconnects; no manual action needed
-  };
-})();
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   §5  Video library
+   §6  Video library
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const videoList     = document.getElementById("videoList");
 const libraryStatus = document.getElementById("libraryStatus");
 const refreshBtn    = document.getElementById("refreshBtn");
-
-/** Local File objects from the folder picker, keyed by filename */
-const localFiles = new Map();
-let isLocalMode  = false;
+const localFiles    = new Map();
+let   isLocalMode   = false;
 
 async function loadServerVideos() {
   isLocalMode = false;
@@ -271,10 +328,7 @@ async function loadServerVideos() {
   }
 
   if (!videos.length) {
-    showStatus(
-      "No videos yet. Tap 📤 to send a video from your phone, or add files to the server folder.",
-      false
-    );
+    showStatus("No videos yet. Tap ＋ Add video to upload one.", false);
     return;
   }
 
@@ -296,18 +350,15 @@ function renderLocalFiles(files) {
   });
 }
 
-/**
- * Creates a video card — click to play on this device.
- */
 function makeCard(filename, isLocal, _index) {
   const ext      = filename.split(".").pop().toLowerCase();
   const baseName = filename.replace(/\.[^.]+$/, "");
   const icons    = { mp4: "🎬", mkv: "🎞️", webm: "📹" };
 
   const li = document.createElement("li");
-  li.className   = "video-card" + (isLocal ? " local" : "");
-  li.tabIndex    = 0;
-  li.role        = "button";
+  li.className        = "video-card" + (isLocal ? " local" : "");
+  li.tabIndex         = 0;
+  li.role             = "button";
   li.dataset.filename = filename;
 
   li.innerHTML = `
@@ -315,16 +366,15 @@ function makeCard(filename, isLocal, _index) {
       <span class="video-card-icon">${icons[ext] || "🎬"}</span>
       <div class="video-card-info">
         <div class="video-card-name" title="${esc(baseName)}">${esc(baseName)}</div>
-        <div class="video-card-ext">${esc(ext)}</div>
+        <div class="video-card-ext">${esc(ext.toUpperCase())}</div>
       </div>
     </div>
   `;
 
-  li.addEventListener("click", () => broadcastPlay(filename));
+  li.addEventListener("click",   () => broadcastPlay(filename));
   li.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); broadcastPlay(filename); }
   });
-
   return li;
 }
 
@@ -341,7 +391,48 @@ function esc(s) {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   §7  Folder picker
+   §7  Upload (Add to library)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const uploadInput  = document.getElementById("uploadInput");
+const uploadStatus = document.getElementById("uploadStatus");
+
+uploadInput.addEventListener("change", async () => {
+  const file = uploadInput.files[0];
+  if (!file) return;
+  uploadInput.value = "";
+
+  showUploadStatus(`Uploading ${file.name}…`, false, true);
+
+  const fd = new FormData();
+  fd.append("video", file);
+
+  try {
+    const r    = await fetch("/api/upload", { method: "POST", body: fd });
+    const body = await r.json();
+    if (!r.ok) { showUploadStatus(`Upload failed: ${body.error}`, true); return; }
+    if (body.transcoding) {
+      showUploadStatus("⚙ Converting to MP4… library updates when done", false, true);
+    } else {
+      showUploadStatus(`✔ Added "${body.filename}" to library`, false);
+      await loadServerVideos();
+      setTimeout(() => { if (uploadStatus) uploadStatus.hidden = true; }, 3000);
+    }
+  } catch (e) {
+    showUploadStatus(`Upload failed: ${e.message}`, true);
+  }
+});
+
+function showUploadStatus(msg, isError, isProgress) {
+  uploadStatus.textContent = msg;
+  uploadStatus.className   = "upload-status" +
+    (isError ? " error" : "") + (isProgress ? " progress" : "");
+  uploadStatus.hidden = false;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   §8  Folder picker
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const folderToggleBtn   = document.getElementById("folderToggleBtn");
@@ -403,7 +494,7 @@ async function applyServerPath() {
     folderPanel.hidden = true;
     await loadServerVideos();
   } catch (e) { showFolderError(e.message); }
-  finally { setFolderBtn.disabled = false; }
+  finally     { setFolderBtn.disabled = false; }
 }
 
 async function loadCurrentVideoDir() {
@@ -419,73 +510,49 @@ async function loadCurrentVideoDir() {
 function showFolderError(msg) { folderError.textContent = msg; folderError.hidden = false; }
 function clearFolderError()   { folderError.hidden = true; folderError.textContent = ""; }
 
+
 /* ═══════════════════════════════════════════════════════════════════════════
-   §8  Playback router
+   §9  Playback router
    ═══════════════════════════════════════════════════════════════════════════ */
 
 let activeFilename = null;
 
 /**
  * Broadcast a play command to ALL connected clients (including yourself).
- * The SSE listener in §4 handles the actual playback for everyone.
+ * The socket "play" listener in §3 handles the actual playback for everyone.
  */
 async function broadcastPlay(filename) {
   try {
     await fetch("/api/play", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename }),
+      body: JSON.stringify({ filename, position: 0 }),
     });
   } catch (e) {
     console.warn("broadcastPlay failed:", e);
   }
 }
 
-function playLocalFile(filename) {
-  if (!player) return;   // guard: Video.js might not have initialised yet
-  const file = localFiles.get(filename);
-  if (!file) return;
-  hidePlaceholder();
-
-  // Revoke previous blob URL to avoid memory leaks
-  const prev = player?.currentSrc?.();
-  if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
-
-  const ext  = filename.split(".").pop().toLowerCase();
-  const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
-  const blobUrl = URL.createObjectURL(file);
-
-  // Call play() synchronously while still inside the user-tap gesture so
-  // mobile Chrome's autoplay policy allows it. Video.js queues the play
-  // internally until the source has loaded — no need to wait for loadedmetadata.
-  player.src({ src: blobUrl, type: mime[ext] || "video/mp4" });
-  player.play().catch((e) => console.warn("play() rejected:", e));
-  setNowPlaying(filename);
-}
-
 async function playViaServer(filename) {
   if (!player) return;
 
-  // Check the file actually exists before handing it to Video.js.
-  // A missing file returns a 404 JSON response which Video.js reports as
-  // "format not supported" — a completely wrong message. We catch it here.
+  // HEAD check: gives a better error than Video.js's "format not supported"
   try {
     const check = await fetch(`/video/${encodeURIComponent(filename)}`, { method: "HEAD" });
     if (!check.ok) {
       hidePlaceholder();
-      setNowPlaying(`⚠ "${filename}" not found on server — try refreshing the library`);
+      setNowPlaying(`⚠ "${filename}" not found on server — try refreshing`);
       highlightCard(filename);
       return;
     }
-  } catch {
-    // Network error — fall through and let Video.js report it
-  }
+  } catch { /* fall through */ }
 
   hidePlaceholder();
   const ext  = filename.split(".").pop().toLowerCase();
   const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
   player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
   player.play().catch((e) => console.warn("play() rejected:", e));
+  activeFilename = filename;
   setNowPlaying(filename);
   highlightCard(filename);
 }
@@ -506,55 +573,6 @@ function highlightCard(filename) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   §9  Chromecast
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   §10 Boot
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   §6  Add-to-library upload
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-const uploadInput  = document.getElementById("uploadInput");
-const uploadStatus = document.getElementById("uploadStatus");
-
-uploadInput.addEventListener("change", async () => {
-  const file = uploadInput.files[0];
-  if (!file) return;
-  uploadInput.value = ""; // reset so same file can be picked again
-
-  showUploadStatus(`Uploading ${file.name}…`, false, true);
-
-  const fd = new FormData();
-  fd.append("video", file);
-
-  try {
-    const r    = await fetch("/api/upload", { method: "POST", body: fd });
-    const body = await r.json();
-    if (!r.ok) { showUploadStatus(`Upload failed: ${body.error}`, true); return; }
-    if (body.transcoding) {
-      showUploadStatus(`⚙ Converting to MP4… library updates automatically when done`, false, true);
-      // library-updated SSE triggers loadServerVideos() when ffmpeg finishes
-    } else {
-      showUploadStatus(`✔ Added "${body.filename}" to library`, false);
-      await loadServerVideos();
-      setTimeout(() => { if (uploadStatus) uploadStatus.hidden = true; }, 3000);
-    }
-  } catch (e) {
-    showUploadStatus(`Upload failed: ${e.message}`, true);
-  }
-});
-
-function showUploadStatus(msg, isError, isProgress) {
-  uploadStatus.textContent = msg;
-  uploadStatus.className   = "upload-status" +
-    (isError ? " error" : "") + (isProgress ? " progress" : "");
-  uploadStatus.hidden = false;
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    §10 Boot

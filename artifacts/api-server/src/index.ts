@@ -1,15 +1,20 @@
 /**
  * index.ts
  * Server entry point.
- * 
- * Starts the Express server and logs:
- *   • The local network URL (for connecting Smart TVs / Chromecast)
- *   • The localhost URL (for local browser testing)
+ *
+ * Creates an HTTP server, attaches Socket.io, and starts listening.
+ * Socket.io is used instead of SSE for sub-50ms bidirectional sync:
+ *   - NTP-style clock offset negotiation on every connection
+ *   - Instant play/pause/seek broadcasts to all connected clients
+ *   - Late-joiner catch-up: new tabs receive current playback state on connect
  */
 
+import { createServer } from "node:http";
+import { Server } from "socket.io";
 import os from "node:os";
-import app from "./app";
-import { logger } from "./lib/logger";
+import app from "./app.js";
+import { setIO, getGlobalState, livePosition } from "./routes/videos.js";
+import { logger } from "./lib/logger.js";
 
 const rawPort = process.env["PORT"] ?? "3000";
 const port = Number(rawPort);
@@ -18,59 +23,72 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-/**
- * Finds the machine's local IPv4 address on the LAN (e.g. 192.168.1.42).
- * 
- * How it works:
- *   • Iterates all network interfaces (Wi-Fi, Ethernet, etc.)
- *   • Skips loopback (127.x.x.x) and IPv6 addresses
- *   • Returns the first external IPv4 it finds
- * 
- * Returns undefined if no suitable interface is found (e.g. no Wi-Fi connected).
- */
+// ── HTTP server + Socket.io ────────────────────────────────────────────────────
+const httpServer = createServer(app);
+
+const io = new Server(httpServer, {
+  cors: { origin: "*", methods: ["GET", "POST"] },
+  // Prefer WebSocket; fall back to long-polling for proxied enviroments
+  transports: ["websocket", "polling"],
+});
+
+// Give the videos router a reference to the Socket.io server so it can broadcast
+setIO(io);
+
+// ── Socket.io connection handler ───────────────────────────────────────────────
+io.on("connection", (socket) => {
+  // NTP-style clock sync: client sends its local timestamp, server echoes it
+  // back with its own. Client calculates round-trip latency and clock offset.
+  // Runs once on connect; client may repeat every 30 s to stay accurate.
+  socket.on("ping-sync", (clientTime: number) => {
+    socket.emit("pong-sync", { clientTime, serverTime: Date.now() });
+  });
+
+  // ── Late-joiner catch-up ────────────────────────────────────────────────────
+  // When a new tab/device opens, send it the current playback state so it
+  // jumps straight to the right video and position.
+  const state = getGlobalState();
+  if (state.currentVideo) {
+    socket.emit("play", {
+      filename:   state.currentVideo,
+      position:   livePosition(),
+      serverTime: Date.now(),
+      paused:     !state.isPlaying,
+    });
+  }
+});
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function getLocalIPv4(): string | undefined {
   const interfaces = os.networkInterfaces();
-
   for (const ifaceName of Object.keys(interfaces)) {
     const addresses = interfaces[ifaceName];
     if (!addresses) continue;
-
     for (const addr of addresses) {
-      // We want an external (non-loopback), IPv4 address
-      if (addr.family === "IPv4" && !addr.internal) {
-        return addr.address;
-      }
+      if (addr.family === "IPv4" && !addr.internal) return addr.address;
     }
   }
-
   return undefined;
 }
 
-// ── Bind to 0.0.0.0 so ALL network interfaces can reach the server ────────────
-// Binding to 127.0.0.1 (default) would make it localhost-only.
-// Binding to 0.0.0.0 makes it reachable on your local Wi-Fi network,
-// which is required for Smart TVs and Chromecast to connect.
-app.listen(port, "0.0.0.0", (err?: Error) => {
-  if (err) {
-    logger.error({ err }, "Error starting server");
-    process.exit(1);
-  }
-
+// ── Start listening ────────────────────────────────────────────────────────────
+// Bind to 0.0.0.0 so Smart TVs and phones on the same Wi-Fi can reach the server
+httpServer.listen(port, "0.0.0.0", () => {
   const localIP = getLocalIPv4();
 
   logger.info({ port }, "Server listening on all interfaces");
 
-  // ── TV / Chromecast access URL ────────────────────────────────────────
   if (localIP) {
     logger.info(
-      `\n\n  📺  Play on your Smart TV by visiting:\n\n       http://${localIP}:${port}\n\n  📱  Or open on your phone to use Chromecast:\n\n       http://${localIP}:${port}\n`,
+      `\n\n  📺  Play on your Smart TV:\n\n       http://${localIP}:${port}\n\n` +
+      `  📱  Open on your phone:\n\n       http://${localIP}:${port}\n`,
     );
   } else {
     logger.warn(
-      "Could not detect a local network IP. Make sure you are connected to Wi-Fi. " +
-        "Find your IP with `ip addr` (Linux) or `ipconfig` (Windows) or `ifconfig` (macOS).",
+      "Could not detect a local network IP. " +
+      "Find it with `ip addr` (Linux) / `ipconfig` (Windows) / `ifconfig` (macOS).",
     );
   }
 
-  logger.info(`  💻  Localhost access: http://localhost:${port}`);
+  logger.info(`  💻  Localhost: http://localhost:${port}`);
 });
