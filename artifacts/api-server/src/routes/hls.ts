@@ -122,18 +122,20 @@ async function startJob(filename: string, videoPath: string): Promise<HlsJob> {
   const manifestPath = path.join(dir, "index.m3u8");
 
   // Detect video codec so we know whether to copy or transcode.
-  // HEVC/H.265 (and other non-H.264 codecs) render as a black screen in
-  // Chrome/Android because the browser can't decode them from TS segments.
-  // Transcode those to H.264; copy everything the browser already supports.
+  // HEVC/H.265 (and any unrecognised codec) renders as a black screen in
+  // Chrome/Android because MSE doesn't support HEVC in TS segments even when
+  // the browser can play HEVC via direct streaming (hardware decoder).
+  // Rule: ONLY skip transcode when the codec is explicitly H.264/VP8/VP9.
+  // If ffprobe is unavailable (returns null), transcode to be safe.
   const detectedCodec = await probeVideoCodec(videoPath);
-  const needsTranscode = detectedCodec !== null && !BROWSER_NATIVE_VIDEO_CODECS.has(detectedCodec);
+  const needsTranscode = detectedCodec === null || !BROWSER_NATIVE_VIDEO_CODECS.has(detectedCodec);
 
   const videoArgs: string[] = needsTranscode
     ? [
         // Re-encode to H.264 for browser compatibility.
-        // Scale down to 1080p max so phones don't choke on 4K transcoding.
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-        "-vf",  "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+        // ultrafast preset + scale to 1080p max keeps phones from choking on 4K.
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+        "-vf",  "scale=min(1920\\,iw):min(1080\\,ih):force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-c:a", "aac", "-b:a", "128k",
       ]
     : ["-c", "copy"];  // stream copy — fast, no quality loss
