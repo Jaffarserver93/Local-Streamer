@@ -43,8 +43,9 @@ function initPlayer() {
     controls: true,
     preload: "metadata",
     playsinline: true,
-    fluid: true,
-    aspectRatio: "16:9",
+    // fluid/aspectRatio removed — sizing is handled entirely by CSS
+    // (.video-js { position:absolute; inset:0; width:100%; height:100% })
+    // Enabling fluid here would fight the CSS and produce a zero-height player.
     techOrder: ["html5"],
     controlBar: {
       skipButtons: { backward: 5, forward: 5 },
@@ -60,6 +61,20 @@ function initPlayer() {
   player.ready(() => {
     initSeekOverlays();
     initKeyboardSeek();
+
+    // Show a human-readable error if a video fails to load/decode
+    player.on("error", () => {
+      const err = player.error();
+      const msgs = {
+        1: "Playback aborted.",
+        2: "Network error — check your connection.",
+        3: "Video cannot be decoded (unsupported format or corrupt file).",
+        4: "Video format not supported by this browser (try MP4/WebM).",
+      };
+      const text = (err && msgs[err.code]) || "Unknown playback error.";
+      setNowPlaying("⚠ " + text);
+      console.warn("Video.js error", err);
+    });
   });
 }
 
@@ -502,12 +517,22 @@ function playLocalFile(filename) {
   const file = localFiles.get(filename);
   if (!file) return;
   hidePlaceholder();
+
+  // Revoke previous blob URL to avoid memory leaks
   const prev = player.currentSrc?.();
   if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+
   const ext  = filename.split(".").pop().toLowerCase();
   const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
-  player.src({ src: URL.createObjectURL(file), type: mime[ext] || "video/mp4" });
-  player.play().catch(() => {});
+  const blobUrl = URL.createObjectURL(file);
+
+  // Set source first, then play once metadata is loaded.
+  // Calling play() immediately after src() races the browser's load cycle and
+  // can result in a blank player even though NOW PLAYING text appears.
+  player.src({ src: blobUrl, type: mime[ext] || "video/mp4" });
+  player.one("loadedmetadata", () => {
+    player.play().catch((e) => console.warn("play() rejected:", e));
+  });
   setNowPlaying(filename);
 }
 
@@ -517,7 +542,10 @@ function playViaServer(filename) {
   const ext  = filename.split(".").pop().toLowerCase();
   const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
   player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
-  player.play().catch(() => {});
+  // Wait for metadata before calling play() — same race-condition fix as playLocalFile
+  player.one("loadedmetadata", () => {
+    player.play().catch((e) => console.warn("play() rejected:", e));
+  });
   setNowPlaying(filename);
   highlightCard(filename);
 }

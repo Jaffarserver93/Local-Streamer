@@ -1,24 +1,48 @@
-# [Project name]
+# Local Stream
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A self-hosted video streaming server. Point it at a folder of videos, open the URL on any device on the same Wi-Fi, and stream or send videos to your TV.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — build + start the API server (uses `PORT` env var)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `PORT` — port number the server listens on (Replit sets this automatically)
+- Optional env: `VIDEO_DIR` — folder to serve videos from (default: `artifacts/api-server/videos/`)
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
+- pnpm workspaces, Node.js 20, TypeScript 5.9
 - API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Video: HTTP 206 Range streaming, Video.js v8, SSE for real-time play commands
+- Build: esbuild (ESM bundle → `artifacts/api-server/dist/index.mjs`)
+
+## Running on Termux (Android)
+
+The built server (`dist/index.mjs`) runs standalone — no pnpm needed at runtime.
+
+**Step 1 — Build on Replit** (one time):
+```
+pnpm --filter @workspace/api-server run build
+```
+
+**Step 2 — Copy to your Android device**:
+Copy the `artifacts/api-server/dist/` folder and the `artifacts/api-server/public/` folder to your device (e.g. `/sdcard/LocalStream/`).
+
+**Step 3 — Install Node.js in Termux**:
+```
+pkg update && pkg install nodejs
+```
+
+**Step 4 — Run the server**:
+```
+PORT=3000 VIDEO_DIR=/sdcard/Download node /sdcard/LocalStream/dist/index.mjs
+```
+
+**Step 5 — Open in browser**:
+Open `http://127.0.0.1:3000` on the same device, or `http://<your-phone-IP>:3000` from any other device on the same Wi-Fi.
+
+> **Tip:** Find your phone's IP with `ip addr show wlan0 | grep inet` in Termux.
 
 ## Where things live
 
