@@ -2,9 +2,8 @@
  * videos.ts
  *
  * Routes:
- *   GET  /events              — SSE stream (TV subscribes here; phone triggers events)
- *   POST /upload              — phone uploads a video file; server saves + broadcasts "play"
- *   POST /api/play            — remote-control: broadcast "play <filename>" to all screens
+ *   GET  /events              — SSE stream; all clients subscribe here
+ *   POST /api/play            — broadcast "play <filename>" to ALL connected clients instantly
  *   GET  /api/videos          — list video files in currentVideoDir
  *   GET  /api/video-dir       — return currentVideoDir path
  *   POST /api/set-video-dir   — change currentVideoDir at runtime
@@ -16,8 +15,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
-import multer from "multer";
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -66,38 +63,6 @@ function broadcast(event: string, data: unknown): void {
   }
 }
 
-// ─── Multer upload config ─────────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination(_req, _file, cb) {
-    // Create the video directory if it doesn't exist yet
-    if (!fs.existsSync(currentVideoDir)) {
-      fs.mkdirSync(currentVideoDir, { recursive: true });
-    }
-    cb(null, currentVideoDir);
-  },
-  filename(_req, file, cb) {
-    // Sanitise: keep only safe characters to prevent path traversal
-    const safe = path
-      .basename(file.originalname)
-      .replace(/[^a-zA-Z0-9._\-\s]/g, "_")
-      .trim();
-    cb(null, safe || `upload_${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 20 * 1024 * 1024 * 1024 }, // 20 GB — covers full-length movies
-  fileFilter(_req, file, cb) {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (SUPPORTED_EXTS.has(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Unsupported file type: ${ext}. Allowed: mp4, mkv, webm.`));
-    }
-  },
-});
-
 const router: IRouter = Router();
 
 // ─── GET /events ─────────────────────────────────────────────────────────────
@@ -139,41 +104,6 @@ router.get("/events", (req: Request, res: Response) => {
   req.on("close", () => {
     clearInterval(heartbeat);
     sseClients.delete(res);
-  });
-});
-
-// ─── POST /upload ─────────────────────────────────────────────────────────────
-/**
- * Receives a video file uploaded from the phone.
- *
- * Flow:
- *   1. Phone picks a file → XHR POST multipart/form-data field "video"
- *   2. Multer streams it straight to disk (currentVideoDir/<filename>)
- *   3. Server broadcasts a "play" SSE event to all connected screens
- *   4. TV receives the event and auto-plays the video
- *
- * The response is JSON so the phone can show a success/error message.
- */
-router.post("/upload", (req: Request, res: Response) => {
-  // Invoke multer manually so we can return proper JSON errors
-  upload.single("video")(req, res, (err: unknown) => {
-    if (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      res.status(400).json({ error: msg });
-      return;
-    }
-
-    // Express augments req with file when multer succeeds
-    const file = (req as Request & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({ error: "No file received. Send a multipart field named 'video'." });
-      return;
-    }
-
-    // Tell every connected screen (TV, phone, tablet) to play this file
-    broadcast("play", { filename: file.filename });
-
-    res.json({ success: true, filename: file.filename });
   });
 });
 

@@ -136,6 +136,25 @@ function initKeyboardSeek() {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   §4  Server-Sent Events — receive play commands broadcast from any client
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+(function initSSE() {
+  const es = new EventSource("/events");
+
+  es.addEventListener("play", (e) => {
+    try {
+      const { filename } = JSON.parse(e.data);
+      if (filename) playViaServer(filename);
+    } catch {}
+  });
+
+  es.onerror = () => {
+    // EventSource auto-reconnects; no manual action needed
+  };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════════
    §5  Video library
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -214,9 +233,9 @@ function makeCard(filename, isLocal, _index) {
     </div>
   `;
 
-  li.addEventListener("click", () => playVideo(filename));
+  li.addEventListener("click", () => broadcastPlay(filename));
   li.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); playVideo(filename); }
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); broadcastPlay(filename); }
   });
 
   return li;
@@ -319,11 +338,20 @@ function clearFolderError()   { folderError.hidden = true; folderError.textConte
 
 let activeFilename = null;
 
-function playVideo(filename) {
-  activeFilename = filename;
-  highlightCard(filename);
-  if (isLocalMode && localFiles.has(filename)) playLocalFile(filename);
-  else                                         playViaServer(filename);
+/**
+ * Broadcast a play command to ALL connected clients (including yourself).
+ * The SSE listener in §4 handles the actual playback for everyone.
+ */
+async function broadcastPlay(filename) {
+  try {
+    await fetch("/api/play", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename }),
+    });
+  } catch (e) {
+    console.warn("broadcastPlay failed:", e);
+  }
 }
 
 function playLocalFile(filename) {
