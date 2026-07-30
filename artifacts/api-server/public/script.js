@@ -125,7 +125,7 @@ function postSync(url, body) {
 function initPlayer() {
   player = videojs("videoPlayer", {
     controls: true,
-    preload: "metadata",
+    preload: "auto",   // buffer aggressively — avoids mid-playback stalls
     playsinline: true,
     techOrder: ["html5"],
     controlBar: {
@@ -133,7 +133,7 @@ function initPlayer() {
       children: [
         "playToggle", "skipBackward", "skipForward",
         "volumePanel", "currentTimeDisplay", "timeDivider",
-        "durationDisplay", "progressControl", "fullscreenToggle",
+        "durationDisplay", "remainingTimeDisplay", "progressControl", "fullscreenToggle",
       ],
     },
     inactivityTimeout: 3000,

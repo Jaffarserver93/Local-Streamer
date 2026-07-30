@@ -59,7 +59,6 @@ const MIME_TYPES: Record<string, string> = {
 
 const NATIVE_EXTS   = new Set([".mp4", ".m4v", ".webm", ".mov"]);
 const SUPPORTED_EXTS = new Set(Object.keys(MIME_TYPES));
-const DEFAULT_CHUNK  = 1024 * 1024; // 1 MB per Range request chunk
 
 // ── Global playback state ──────────────────────────────────────────────────────
 /**
@@ -319,7 +318,10 @@ router.get("/video/:filename", (req: Request, res: Response) => {
   if (rangeHeader) {
     const [s, e] = rangeHeader.replace(/bytes=/, "").split("-");
     const start  = parseInt(s ?? "0", 10);
-    const end    = e ? parseInt(e, 10) : Math.min(start + DEFAULT_CHUNK - 1, fileSize - 1);
+    // No artificial chunk cap — send the full remainder when browser omits the end.
+    // This lets the browser buffer as much as it wants in a single request instead
+    // of making 200+ round trips for a 200 MB file (the old 1 MB cap caused buffering).
+    const end    = (e && e.trim() !== "") ? parseInt(e, 10) : fileSize - 1;
 
     if (isNaN(start) || isNaN(end) || start < 0 || end >= fileSize || start > end) {
       res.setHeader("Content-Range", `bytes */${fileSize}`);
