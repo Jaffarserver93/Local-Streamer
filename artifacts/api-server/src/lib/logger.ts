@@ -4,9 +4,12 @@ import path from "node:path";
 
 const isProduction = process.env.NODE_ENV === "production";
 
-// Log file path — override with LOG_FILE env var, default next to the dist/
+// Log file path — override with LOG_FILE env var.
+// Default: api.log inside VIDEO_DIR (same folder as the videos),
+// falling back to the working directory if VIDEO_DIR isn't set.
 const logFile = path.resolve(
-  process.env["LOG_FILE"] ?? path.join(process.cwd(), "api.log")
+  process.env["LOG_FILE"] ??
+    path.join(process.env["VIDEO_DIR"] ?? process.cwd(), "api.log")
 );
 
 // Ensure the log file's parent directory exists
