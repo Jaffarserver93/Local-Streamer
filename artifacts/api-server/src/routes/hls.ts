@@ -196,7 +196,10 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
     "-hls_list_size",        "0",
     "-hls_start_number",     String(startNumber),
     "-hls_segment_filename", path.join(dir, "seg%04d.ts"),
-    "-hls_flags",            "independent_segments",
+    // NOTE: "-hls_flags independent_segments" is intentionally omitted —
+    // some FFmpeg builds (e.g. Termux) do not recognise this value and exit
+    // with code 8 (AVERROR_OPTION_NOT_FOUND). The flag is cosmetic for VOD;
+    // playback works correctly without it.
     "-y",
     manifestPath,
   ]);

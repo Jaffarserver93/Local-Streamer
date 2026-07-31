@@ -49570,7 +49570,7 @@ var require_pino = __commonJS({
     function pinoBundlerAbsolutePath(p) {
       try {
         const path6 = __require("path");
-        const workingDir = "C:\\Users\\ACER\\Desktop\\Local-Streamer\\artifacts\\api-server";
+        const workingDir = "/home/runner/workspace/artifacts/api-server";
         const outputDir = path6.resolve(workingDir, "dist");
         return path6.resolve(outputDir, p.replace(/^\.\//, ""));
       } catch (e) {
@@ -62469,8 +62469,10 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     String(startNumber),
     "-hls_segment_filename",
     path2.join(dir, "seg%04d.ts"),
-    "-hls_flags",
-    "independent_segments",
+    // NOTE: "-hls_flags independent_segments" is intentionally omitted —
+    // some FFmpeg builds (e.g. Termux) do not recognise this value and exit
+    // with code 8 (AVERROR_OPTION_NOT_FOUND). The flag is cosmetic for VOD;
+    // playback works correctly without it.
     "-y",
     manifestPath
   ]);

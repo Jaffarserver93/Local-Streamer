@@ -1,74 +1,337 @@
-         ~/localstream $ cd ~/localstream && git pull         remote: Enumerating objects: 15, done.
-remote: Counting objects: 100% (15/15), done.        remote: Compressing objects: 100% (4/4), done.       remote: Total 8 (delta 4), reused 8 (delta 4), pack-reused 0 (from 0)
-Unpacking objects: 100% (8/8), 1.30 KiB | 148.00 KiB/s, done.
-From https://github.com/Jaffarserver93/Local-Streamer
-   2cf05ee..6eaa58b  main       -> origin/main
-Updating 5e2dcaa..6eaa58b                            error: The following untracked working tree files would be overwritten by merge:
-        artifacts/api-server/videos/239b5850-f392-409a-9386-c7aff0999d1b-1_all_6903.mp4                   Please move or remove them before you merge.
-Aborting
-~/localstream $ pnpm --filter @workspace/api-server run build                                             $ node ./build.mjs
-✓ Copied socket.io.min.js to public/
-
-  dist/index.mjs                       2.2mb ⚠️         dist/pino-worker.mjs               153.4kb
-  dist/pino-file.mjs                 142.1kb
-  dist/pino-pretty.mjs               114.4kb
-  dist/thread-stream-worker.mjs        7.3kb           dist/index.mjs.map                   3.6mb
-  dist/pino-worker.mjs.map           256.9kb
-  dist/pino-file.mjs.map             229.1kb           dist/pino-pretty.mjs.map           203.6kb
-  dist/thread-stream-worker.mjs.map   12.0kb         
-⚡ Done in 409ms
-~/localstream $ PORT=3000 VIDEO_DIR=/storage/emulated/0/Download/AOT node ~/localstream/artifacts/api-server/dist/index.mjs
-[03:51:42.224] INFO (13445): Server listening on all interfaces
-    port: 3000                                       [03:51:42.225] INFO (13445):
-
-  📺  Play on your Smart TV:
-                                                            http://10.84.174.191:3000
-
-  📱  Open on your phone:                            
-       http://10.84.174.191:3000                     
-[03:51:42.225] INFO (13445):   💻  Localhost: http://localhost:3000                                       [03:52:05.904] INFO (13445): request completed           req: {                                                 "id": 1,                                             "method": "GET",                                     "url": "/"                                         }                                                    res: {                                                 "statusCode": 304                                  }                                                    responseTime: 89                                 [03:52:05.965] INFO (13445): request completed           req: {                                                 "id": 3,                                             "method": "GET",                                     "url": "/video-js.css"                             }                                                    res: {                                                 "statusCode": 304                                  }                                                    responseTime: 25                                 [03:52:05.993] INFO (13445): request completed           req: {                                                 "id": 2,                                             "method": "GET",                                     "url": "/socket.io.min.js"                         }                                                    res: {                                                 "statusCode": 200                                  }                                                    responseTime: 62
-[03:52:06.002] INFO (13445): request completed           req: {                                                 "id": 4,                                             "method": "GET",
-      "url": "/script.js"
-    }
-    res: {                                                 "statusCode": 304
-    }
-    responseTime: 25
-[03:52:06.012] INFO (13445): request completed           req: {
-      "id": 5,
-      "method": "GET",                                     "url": "/style.css"
-    }                                                    res: {
-      "statusCode": 304
-    }
-    responseTime: 6                                  [03:52:06.019] INFO (13445): request completed
+[22:26:41.537] INFO (24203):   💻  Localhost: http://localhost:3000
+[22:26:51.064] INFO (24203): request completed
     req: {
-      "id": 6,
-      "method": "GET",                                     "url": "/video.min.js"
+      "id": 1,
+      "method": "GET",
+      "url": "/favicon.ico"
     }
     res: {
-      "statusCode": 304                                  }                                                    responseTime: 4
-[03:52:06.270] INFO (13445): request completed
-    req: {                                                 "id": 7,
+      "statusCode": 404
+    }
+    responseTime: 87
+[22:26:52.053] INFO (24203): request completed
+    req: {
+      "id": 2,
       "method": "GET",
+      "url": "/"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 48
+[22:26:52.107] INFO (24203): request completed
+    req: {
+      "id": 3,
+      "method": "GET",
+      "url": "/video-js.css"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 21
+[22:26:52.126] INFO (24203): request completed
+    req: {
+      "id": 4,
+      "method": "GET",
+      "url": "/style.css"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 35
+[22:26:52.132] INFO (24203): request completed
+    req: {
+      "id": 5,
+      "method": "GET",
+      "url": "/video.min.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 14
+[22:26:52.154] INFO (24203): request completed
+    req: {
+      "id": 6,
+      "method": "GET",
+      "url": "/socket.io.min.js"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 18
+[22:26:52.169] INFO (24203): request completed
+    req: {
+      "id": 7,
+      "method": "GET",
+      "url": "/script.js"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 25
+[22:26:52.331] INFO (24203): request completed
+    req: {
+      "id": 8,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 39
+[22:26:52.365] INFO (24203): request completed           req: {
+      "id": 9,
+      "method": "GET",
+      "url": "/api/videos"
+    }                                                    res: {
+      "statusCode": 200                                  }
+    responseTime: 66
+[CLIENT-LOG] [ERROR] Player playback error | File: "s1ep1.mp4" | Code: 4 | Src: /video/s1ep1.mp4 | UA: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36
+[22:26:54.597] INFO (24203): request completed
+    req: {
+      "id": 10,                                            "method": "GET",
       "url": "/api/video-dir"
     }                                                    res: {
       "statusCode": 304
-    }                                                    responseTime: 39                                 [03:52:06.298] INFO (13445): request completed
+    }
+    responseTime: 10
+[22:26:54.785] INFO (24203): request aborted
     req: {
-      "id": 8,                                             "method": "GET",
-      "url": "/api/videos"                               }
+      "id": 13,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 68
+[22:26:54.909] INFO (24203): request completed
+    req: {
+      "id": 14,
+      "method": "POST",                                    "url": "/api/client-log"                           }
+    res: {                                                 "statusCode": 200
+    }
+    responseTime: 76                                 [22:26:54.959] INFO (24203): request aborted             req: {
+      "id": 11,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {                                                 "statusCode": 206
+    }
+    responseTime: 350
+[22:26:56.038] INFO (24203): request completed
+    req: {
+      "id": 15,
+      "method": "POST",                                    "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 1115
+[22:26:56.081] INFO (24203): request completed
+    req: {
+      "id": 12,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 1447
+[HLS Error] FFmpeg failed for "s1ep1.mp4" (exit 8): Error splitting the argument list: Option not found
+[22:27:09.219] INFO (24203): request completed
+    req: {
+      "id": 16,
+      "method": "POST",
+      "url": "/api/hls/clear"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 15
+[CLIENT-LOG] [ERROR] Player playback error | File: "s1ep1.mp4" | Code: 4 | Src: /video/s1ep1.mp4 | UA: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36
+[22:27:11.044] INFO (24203): request completed
+    req: {
+      "id": 17,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
     res: {
       "statusCode": 304
-    }                                                    responseTime: 63                                 NotFoundError: Not Found                                 at createHttpError (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:44785:16)
-    at SendStream.error (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:44423:35)
-    at SendStream.pipe (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:44579:18)
-    at sendfile (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:45296:12)
-    at ServerResponse.sendFile (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:45040:7)                                   at file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:62516:7        at Layer.handleRequest (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:42392:21)                                      at next (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:42529:17)                                                     at Route.dispatch (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:42503:7)                                            at handle (file:///data/data/com.termux/files/home/localstream/artifacts/api-server/dist/index.mjs:42796:16)                                               [03:52:08.194] INFO (13445): request completed           req: {                                                 "id": 9,                                             "method": "POST",                                    "url": "/api/play"                                 }                                                    res: {                                                 "statusCode": 200                                  }                                                    responseTime: 145                                [03:52:08.225] INFO (13445): request completed
-    req: {                                                 "id": 10,
-      "method": "GET",                                     "url": "/api/video-dir"                            }
-    res: {                                                 "statusCode": 304                                  }
-    responseTime: 24                                 [03:52:08.292] INFO (13445): request completed           req: {                                                 "id": 11,                                            "method": "POST",                                    "url": "/api/hls/start/239b5850-f392-409a-9386-c7aff0999d1b-1_all_6903.mp4"                             }                                                    res: {                                                 "statusCode": 200
-    }                                                    responseTime: 38                                 [03:52:08.397] INFO (13445): request completed
-    req: {                                                 "id": 12,                                            "method": "GET",
-      "url": "/api/hls/239b5850-f392-409a-9386-c7aff0999d1b-1_all_6903.mp4/index.m3u8"
-    }                                                    res: {                                                 "statusCode": 404
-    }                                                    responseTime: 50
+    }
+    responseTime: 7
+[22:27:11.107] INFO (24203): request completed
+    req: {
+      "id": 19,
+      "method": "POST",
+      "url": "/api/client-log"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 11
+[22:27:11.817] INFO (24203): request completed
+    req: {
+      "id": 21,
+      "method": "GET",
+      "url": "/"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 18
+[22:27:11.856] INFO (24203): request aborted
+    req: {
+      "id": 20,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": null
+    }
+    responseTime: 720
+[22:27:11.894] INFO (24203): request aborted
+    req: {
+      "id": 18,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": null
+    }
+    responseTime: 838
+[22:27:11.903] INFO (24203): request completed
+    req: {
+      "id": 22,
+      "method": "GET",
+      "url": "/video-js.css"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 28
+[22:27:11.913] INFO (24203): request completed
+    req: {
+      "id": 23,
+      "method": "GET",
+      "url": "/style.css"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 7
+[22:27:11.953] INFO (24203): request completed
+    req: {
+      "id": 24,
+      "method": "GET",
+      "url": "/video.min.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 36
+[22:27:12.014] INFO (24203): request completed
+    req: {
+      "id": 25,
+      "method": "GET",
+      "url": "/socket.io.min.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 56
+[22:27:12.027] INFO (24203): request completed
+    req: {
+      "id": 26,
+      "method": "GET",
+      "url": "/script.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 8
+[22:27:12.090] INFO (24203): request completed
+    req: {
+      "id": 27,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 25
+[22:27:12.118] INFO (24203): request completed
+    req: {
+      "id": 28,
+      "method": "GET",
+      "url": "/api/videos"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 42
+[HLS Error] FFmpeg failed for "s1ep1.mp4" (exit 8): Error splitting the argument list: Option not found
+[22:27:13.116] INFO (24203): request completed
+    req: {
+      "id": 29,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 11
+[22:27:13.222] INFO (24203): request aborted
+    req: {
+      "id": 32,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 43
+[CLIENT-LOG] [ERROR] Player playback error | File: "s1ep1.mp4" | Code: 4 | Src: /video/s1ep1.mp4 | UA: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36
+[22:27:13.296] INFO (24203): request completed
+    req: {
+      "id": 33,
+      "method": "POST",
+      "url": "/api/client-log"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 13
+[22:27:13.334] INFO (24203): request aborted
+    req: {
+      "id": 30,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 214
+[22:27:14.046] INFO (24203): request completed
+    req: {
+      "id": 31,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 914
+[22:27:14.258] INFO (24203): request completed
+    req: {
+      "id": 34,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 959
+[HLS Error] FFmpeg failed for "s1ep1.mp4" (exit 8): Error splitting the argument list: Option not found
+^C
+~/localstream $

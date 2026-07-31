@@ -4118,7 +4118,7 @@ var require_pino = __commonJS({
     function pinoBundlerAbsolutePath(p) {
       try {
         const path = __require("path");
-        const workingDir = "C:\\Users\\ACER\\Desktop\\Local-Streamer\\artifacts\\api-server";
+        const workingDir = "/home/runner/workspace/artifacts/api-server";
         const outputDir = path.resolve(workingDir, "dist");
         return path.resolve(outputDir, p.replace(/^\.\//, ""));
       } catch (e) {
