@@ -235,10 +235,17 @@ function initTapOverlay() {
   player.el().addEventListener("click", (e) => {
     if (!activeFilename) return;
     if (e.target.closest(".vjs-control-bar")) return;
-    if (e.target.closest("#tapZoneLeft") || e.target.closest("#tapZoneRight")) return;
 
-    // Skip animation if 2x speed was triggered or click ended a drag
-    if (_is2xActive) { stop2xSpeed(); return; }
+    // Prevent click from toggling play/pause if releasing a 2x speed hold
+    if (_is2xActive || _was2xJustActive) {
+      _was2xJustActive = false;
+      stop2xSpeed();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    if (e.target.closest("#tapZoneLeft") || e.target.closest("#tapZoneRight")) return;
 
     if (_tapDownX !== null) {
       const moved = Math.abs(e.clientX - _tapDownX) > 8 ||
@@ -250,7 +257,7 @@ function initTapOverlay() {
     // Show the state the video is BECOMING (current state flips after this event)
     tapPlayPause.innerHTML = player.paused() ? SVG_PLAY : SVG_PAUSE;
     animateTap("tapIconCenter");
-  });
+  }, true);
 }
 
 function seek(delta, isForward) {
@@ -560,6 +567,7 @@ function initSettingsMenu() {
 /* ── 2x Speed Hold Gesture ─────────────────────────────────────────────────── */
 let _hold2xTimer = null;
 let _is2xActive = false;
+let _was2xJustActive = false;
 
 function start2xSpeed() {
   if (_is2xActive || !player) return;
@@ -578,7 +586,15 @@ function stop2xSpeed() {
   _hold2xTimer = null;
   if (!_is2xActive) return;
   _is2xActive = false;
-  if (player) player.playbackRate(1.0);
+  _was2xJustActive = true;
+  setTimeout(() => { _was2xJustActive = false; }, 300);
+
+  if (player) {
+    player.playbackRate(1.0);
+    if (player.paused()) {
+      player.play().catch(() => {});
+    }
+  }
   const badge = document.getElementById("speedBadge");
   if (badge) {
     badge.hidden = true;
