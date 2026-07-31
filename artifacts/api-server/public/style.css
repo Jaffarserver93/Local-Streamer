@@ -221,18 +221,6 @@ body {
   display: flex; z-index: 20; pointer-events: none;
 }
 
-/* ── YouTube-style top seek hint banner ─────────────────────────────────────── */
-.tap-banner {
-  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.72); backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 20px;
-  color: rgba(255, 255, 255, 0.95); font-size: .74rem; font-weight: 600;
-  letter-spacing: .04em; padding: 4px 14px; white-space: nowrap;
-  pointer-events: none; opacity: 0; transition: opacity 0.3s ease;
-  z-index: 22; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-}
-.video-js:hover .tap-banner,
-.video-js.vjs-user-active .tap-banner { opacity: 1; }
 
 /* ── Settings Panel Popup Modal (Gear Icon) ────────────────────────────────── */
 .settings-panel {
@@ -424,6 +412,27 @@ body {
   transition: background var(--ease), border-color var(--ease);
 }
 .sub-upload-label:hover { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.3); }
+
+/* ── Direct Video / Stream URL Bar ───────────────────────────────────────────── */
+.url-stream-bar {
+  display: flex; align-items: center; gap: .5rem;
+  max-width: 800px; margin: .6rem auto 0; width: 100%;
+}
+.url-input {
+  flex: 1; padding: .45rem .8rem; background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px;
+  color: #fff; font-size: .8rem; outline: none;
+  transition: border-color var(--ease), background var(--ease);
+}
+.url-input:focus { background: rgba(255, 255, 255, 0.09); border-color: var(--accent); }
+.url-input::placeholder { color: var(--muted); font-size: .76rem; }
+.url-btn {
+  padding: .45rem 1rem; background: var(--accent); color: #fff; border: none;
+  border-radius: 6px; font-size: .78rem; font-weight: 700; cursor: pointer;
+  white-space: nowrap; transition: background var(--ease), transform var(--ease);
+}
+.url-btn:hover { background: var(--accentd); transform: translateY(-1px); }
+.url-btn:active { transform: translateY(0); }
 
 /* ── Card Progress Bar (Continue Watching) ────────────────────────────────────── */
 .card-progress-bar {

@@ -70,6 +70,7 @@ function initPlayer() {
     initSubtitleLoader();
     initSettingsMenu();
     initProgressBarThumbnails();
+    initUrlStreamer();
 
     // ── Auto-save playback history for Continue Watching ───────────────────────
     let _lastSaveTime = 0;
@@ -615,6 +616,7 @@ function start2xSpeed() {
   if (_is2xActive || !player) return;
   _is2xActive = true;
   player.playbackRate(2.0);
+
   const badge = document.getElementById("speedBadge");
   if (badge) {
     badge.textContent = "Playing at 2x speed";
@@ -637,6 +639,7 @@ function stop2xSpeed() {
       player.play().catch(() => {});
     }
   }
+
   const badge = document.getElementById("speedBadge");
   if (badge) {
     badge.hidden = true;
@@ -644,20 +647,60 @@ function stop2xSpeed() {
   }
 }
 
-/* ── Progress Bar Hover Video Frame Thumbnail Preview ───────────────────────── */
+/* ── Direct Video / Stream URL Handler ──────────────────────────────────────── */
+function initUrlStreamer() {
+  const input = document.getElementById("streamUrlInput");
+  const btn   = document.getElementById("streamUrlBtn");
+  if (!input || !btn) return;
+
+  function playUrl() {
+    const rawUrl = (input.value || "").trim();
+    if (!rawUrl || !player) return;
+
+    try {
+      const parsed = new URL(rawUrl);
+      activeFilename = ""; // clear local file selection
+      hidePlaceholder();
+
+      const ext = parsed.pathname.split(".").pop()?.toLowerCase() || "";
+      const isHls = ext === "m3u8" || rawUrl.includes(".m3u8");
+      const mimeType = isHls ? "application/x-mpegURL" : "video/mp4";
+
+      player.src({ src: rawUrl, type: mimeType });
+      const urlName = parsed.pathname.split("/").pop() || parsed.hostname;
+      setNowPlaying(`🌐 ${decodeURIComponent(urlName)}`);
+
+      player.play().catch(() => {});
+      showToast("▶ Streaming URL live");
+    } catch {
+      showToast("⚠ Invalid video URL");
+    }
+  }
+
+  btn.addEventListener("click", playUrl);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      playUrl();
+    }
+  });
+}
+
+/* ── Progress Bar Hover Video Frame Thumbnail Preview (Zero-Lag Optimized) ──── */
 let _previewVideo = null;
 let _previewCanvas = null;
 let _previewCtx = null;
 let _previewCard = null;
 let _previewTimeLabel = null;
 let _isSeekingPreview = false;
+const _frameCache = new Map();
 
 function initProgressBarThumbnails() {
   if (!player) return;
 
   _previewVideo = document.createElement("video");
   _previewVideo.muted = true;
-  _previewVideo.preload = "auto";
+  _previewVideo.preload = "metadata";
   _previewVideo.playsInline = true;
   _previewVideo.style.display = "none";
   document.body.appendChild(_previewVideo);
@@ -684,6 +727,7 @@ function initProgressBarThumbnails() {
   progressControl.appendChild(_previewCard);
 
   player.on("loadstart", () => {
+    _frameCache.clear();
     const src = player.currentSrc();
     if (src && _previewVideo) {
       _previewVideo.src = src;
@@ -694,14 +738,17 @@ function initProgressBarThumbnails() {
     if (_previewCtx && _previewVideo && _previewVideo.readyState >= 2) {
       try {
         _previewCtx.drawImage(_previewVideo, 0, 0, _previewCanvas.width, _previewCanvas.height);
-      } catch (err) {
-        console.warn("Thumbnail frame draw skipped", err);
-      }
+        const timeKey = Math.floor(_previewVideo.currentTime);
+        if (_frameCache.size < 50) {
+          createImageBitmap(_previewCanvas).then(bmp => _frameCache.set(timeKey, bmp)).catch(() => {});
+        }
+      } catch {}
     }
     _isSeekingPreview = false;
   });
 
   let _lastSeekTime = 0;
+  let _hoverDebounceTimer = null;
 
   progressControl.addEventListener("mousemove", (e) => {
     const duration = player.duration();
@@ -716,16 +763,29 @@ function initProgressBarThumbnails() {
     _previewCard.style.display = "flex";
     _previewTimeLabel.textContent = formatTime(hoverTime);
 
-    const now = Date.now();
-    if (now - _lastSeekTime > 60 && !_isSeekingPreview) {
-      _lastSeekTime = now;
-      _isSeekingPreview = true;
-      _previewVideo.currentTime = hoverTime;
+    const timeKey = Math.floor(hoverTime);
+    if (_frameCache.has(timeKey)) {
+      const bmp = _frameCache.get(timeKey);
+      if (bmp && _previewCtx) {
+        _previewCtx.drawImage(bmp, 0, 0, _previewCanvas.width, _previewCanvas.height);
+      }
+      return;
     }
+
+    clearTimeout(_hoverDebounceTimer);
+    _hoverDebounceTimer = setTimeout(() => {
+      const now = Date.now();
+      if (now - _lastSeekTime > 220 && !_isSeekingPreview) {
+        _lastSeekTime = now;
+        _isSeekingPreview = true;
+        _previewVideo.currentTime = hoverTime;
+      }
+    }, 60);
   });
 
   progressControl.addEventListener("mouseleave", () => {
     if (_previewCard) _previewCard.style.display = "none";
+    clearTimeout(_hoverDebounceTimer);
   });
 }
 

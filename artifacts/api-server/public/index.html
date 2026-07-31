@@ -53,8 +53,6 @@
         <!-- Netflix-style tap overlay: left −5s | center play/pause | right +5s -->
         <div id="tapOverlay" class="tap-overlay" aria-hidden="true">
 
-          <div id="tapBanner" class="tap-banner">◄◄◄ Double tap left or right to skip 5 seconds ►►►</div>
-
           <!-- 2x speed badge overlay -->
           <div id="speedBadge" class="speed-badge" hidden>Playing at 2x speed</div>
 
@@ -138,6 +136,12 @@
       <div id="nowPlaying" class="now-playing" hidden>
         <span class="now-playing-label">NOW PLAYING</span>
         <span id="nowPlayingName" class="now-playing-name"></span>
+      </div>
+
+      <!-- Direct Video / Stream URL Bar -->
+      <div class="url-stream-bar">
+        <input type="url" id="streamUrlInput" placeholder="Paste direct video or stream URL (.mp4, .m3u8, .webm)..." class="url-input" />
+        <button id="streamUrlBtn" class="url-btn">▶ Play URL</button>
       </div>
     </section>
 
