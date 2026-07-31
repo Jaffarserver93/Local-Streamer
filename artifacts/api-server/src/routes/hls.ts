@@ -69,6 +69,14 @@ const jobs = new Map<string, HlsJob>();
 let io: IOServer | null = null;
 export function setHlsIO(ioInstance: IOServer): void { io = ioInstance; }
 
+/**
+ * Whether this FFmpeg build requires compat mode (detected on first exit-8).
+ * In compat mode we drop options that some stripped FFmpeg builds (e.g. Termux)
+ * don't recognise: currently `-hls_start_number`.
+ * Once set, all subsequent spawns skip the unsupported flags immediately.
+ */
+let ffmpegCompatMode = false;
+
 /** Emit only to a specific socket (the one that started the HLS job). */
 function emitTo(socketId: string, event: string, data: unknown): void {
   if (!socketId) { io?.emit(event, data); return; }
@@ -170,8 +178,10 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
   jobs.set(s, job);
 
   // Segment numbering: segment N starts at N * HLS_SEGMENT_DURATION in the video.
-  // Using -hls_start_number means the manifest sets #EXT-X-MEDIA-SEQUENCE:N so
-  // Video.js VHS maps each segment to the correct timeline position automatically.
+  // When supported, -hls_start_number sets #EXT-X-MEDIA-SEQUENCE:N so Video.js VHS
+  // maps each segment to the correct timeline position automatically.
+  // Some stripped FFmpeg builds (e.g. Termux) don't recognise this option and exit
+  // with code 8 (AVERROR_OPTION_NOT_FOUND) — we detect that and retry without it.
   const startNumber = Math.floor(startAt / HLS_SEGMENT_DURATION);
 
   const videoArgs: string[] = needsTranscode
@@ -188,28 +198,49 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
     ? ["-ss", String(startAt), "-i", videoPath]  // fast input seek → nearest keyframe
     : ["-i", videoPath];
 
-  const proc = spawn("ffmpeg", [
-    ...inputArgs,
-    ...videoArgs,
-    "-f",                    "hls",
-    "-hls_time",             String(HLS_SEGMENT_DURATION),
-    "-hls_list_size",        "0",
-    "-hls_start_number",     String(startNumber),
-    "-hls_segment_filename", path.join(dir, "seg%04d.ts"),
-    // NOTE: "-hls_flags independent_segments" is intentionally omitted —
-    // some FFmpeg builds (e.g. Termux) do not recognise this value and exit
-    // with code 8 (AVERROR_OPTION_NOT_FOUND). The flag is cosmetic for VOD;
-    // playback works correctly without it.
-    "-y",
-    manifestPath,
-  ]);
+  /**
+   * Build the ffmpeg arg list.
+   * compat=true  → omit options that some stripped builds don't support
+   *                (currently: -hls_start_number, -hls_flags independent_segments)
+   * compat=false → full option set for well-equipped builds
+   */
+  function buildArgs(compat: boolean): string[] {
+    return [
+      ...inputArgs,
+      ...videoArgs,
+      "-f",                    "hls",
+      "-hls_time",             String(HLS_SEGMENT_DURATION),
+      "-hls_list_size",        "0",
+      // -hls_start_number is absent from some FFmpeg builds; dropped in compat mode.
+      ...(compat ? [] : ["-hls_start_number", String(startNumber)]),
+      "-hls_segment_filename", path.join(dir, "seg%04d.ts"),
+      // -hls_flags independent_segments is omitted entirely — Termux's FFmpeg
+      // doesn't recognise it and exits with code 8. It's cosmetic for VOD.
+      "-y",
+      manifestPath,
+    ];
+  }
 
-  job.proc = proc;
+  /** Spawn ffmpeg and resolve once it exits. Returns { code, stderr }. */
+  function spawnFfmpeg(args: string[]): { proc: ChildProcess; done: Promise<{ code: number | null; stderr: string }> } {
+    const proc = spawn("ffmpeg", args);
+    let stderrBuf = "";
+    proc.stderr?.on("data", (d: Buffer) => { stderrBuf += d.toString(); });
+    const done = new Promise<{ code: number | null; stderr: string }>((resolve) => {
+      proc.on("close", (code) => resolve({ code, stderr: stderrBuf }));
+      proc.on("error",  (e: NodeJS.ErrnoException) => {
+        const msg = e.code === "ENOENT"
+          ? "ffmpeg not found — install it: pkg install ffmpeg"
+          : e.message;
+        resolve({ code: -1, stderr: msg });
+      });
+    });
+    return { proc, done };
+  }
 
-  let stderrBuf = "";
-  proc.stderr?.on("data", (d: Buffer) => {
-    stderrBuf += d.toString();
-  });
+  // ── First attempt ─────────────────────────────────────────────────────────────
+  const attempt1 = spawnFfmpeg(buildArgs(ffmpegCompatMode));
+  job.proc = attempt1.proc;
 
   // Poll every 500 ms for new .ts files
   const watcher = setInterval(() => {
@@ -222,51 +253,68 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
 
   job.watcher = watcher;
 
-  proc.on("close", (code) => {
+  // ── Handle result (with optional compat retry on exit 8) ──────────────────────
+  void attempt1.done.then(async ({ code, stderr }) => {
+    // Guard: ignore if a seek restart killed this job
+    if (jobs.get(s) !== job) return;
+
+    // ── Exit 8 = AVERROR_OPTION_NOT_FOUND → enable compat mode and retry ─────
+    if (code === 8 && !ffmpegCompatMode) {
+      // Log the full stderr so the exact option name is visible in the log
+      console.error(
+        `[HLS] FFmpeg exited 8 (option not found) for "${filename}". Full stderr:\n${stderr.trim()}\n` +
+        `[HLS] Switching to compat mode (dropping -hls_start_number) and retrying.`,
+      );
+      ffmpegCompatMode = true;
+
+      // Wipe the (empty) cache dir and restart with compat args
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+      fs.mkdirSync(dir, { recursive: true });
+
+      const attempt2 = spawnFfmpeg(buildArgs(true));
+      job.proc = attempt2.proc;
+
+      const { code: code2, stderr: stderr2 } = await attempt2.done;
+      if (jobs.get(s) !== job) return;
+      handleClose(code2, stderr2);
+      return;
+    }
+
+    handleClose(code, stderr);
+  });
+
+  function handleClose(code: number | null, stderr: string): void {
     clearInterval(watcher);
     job.watcher = undefined;
-    // Only handle if this job is still the active one (not killed by a seek restart)
     if (jobs.get(s) !== job) return;
+
     const n = countSegments(dir);
     job.segments = n;
+
     if (code === 0) {
-      // Only mark "ready" when the job covered the full video (startAt === 0).
-      // A seek-started job only covers startAt→end; the player handles it but
-      // we don't want to permanently mark the cache as complete.
       if (startAt === 0) {
         writeCacheVersion(dir);
         job.status = "ready";
         emitTo(job.socketId, "hls-ready", { filename, segments: n });
       } else {
-        // Mark as a completed seek job so we stop polling but don't label full-cache
         job.status = "ready";
         emitTo(job.socketId, "hls-seek-ready", { filename, segments: n, startAt });
       }
       emitTo(job.socketId, "hls-segment", { filename, count: n, transcoding: false, startAt });
     } else {
-      const errDetail = stderrBuf.trim().split("\n").pop() || `exit code ${code}`;
-      console.error(`[HLS Error] FFmpeg failed for "${filename}" (exit ${code}): ${errDetail}`);
+      // Log the full stderr so the failing option name is visible
+      const lastLine  = stderr.trim().split("\n").pop() || `exit code ${code}`;
+      const fullDiag  = stderr.trim().length > lastLine.length
+        ? `\n--- ffmpeg stderr ---\n${stderr.trim()}\n---`
+        : "";
+      console.error(`[HLS Error] FFmpeg failed for "${filename}" (exit ${code}): ${lastLine}${fullDiag}`);
       job.status = "error";
-      job.error  = `ffmpeg exited ${code}: ${errDetail}`;
+      job.error  = `ffmpeg exited ${code}: ${lastLine}`;
       emitTo(job.socketId, "hls-error", { filename, error: job.error });
       jobs.delete(s);
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     }
-  });
-
-  proc.on("error", (e: NodeJS.ErrnoException) => {
-    clearInterval(watcher);
-    job.watcher = undefined;
-    if (jobs.get(s) !== job) return;
-    const msg = e.code === "ENOENT"
-      ? "ffmpeg not found — install it: pkg install ffmpeg"
-      : e.message;
-    job.status = "error";
-    job.error  = msg;
-    emitTo(job.socketId, "hls-error", { filename, error: msg });
-    jobs.delete(s);
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
-  });
+  }
 
   return job;
 }
