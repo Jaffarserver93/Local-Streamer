@@ -43,6 +43,9 @@ function initPlayer() {
       ],
     },
     inactivityTimeout: 3000,
+    // Disable built-in double-click fullscreen toggle so our left/right
+    // seek zones handle double-click without exiting fullscreen on TV.
+    userActions: { doubleClick: false },
   });
 
   player.ready(() => {
@@ -145,8 +148,10 @@ function initSeekOverlays() {
     if (e.target.closest(".vjs-control-bar")) return;
     const right = e.clientX - el.getBoundingClientRect().left > el.offsetWidth / 2;
     seek(right ? SEEK_S : -SEEK_S, right);
+    // Prevent browser fullscreen exit and stop Video.js from seeing the event
+    e.preventDefault();
     e.stopPropagation();
-  });
+  }, true); // capture phase so we beat any other handlers
 }
 
 function seek(delta, isForward) {
