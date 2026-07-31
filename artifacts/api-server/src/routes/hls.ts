@@ -34,8 +34,8 @@ const HLS_CACHE_ROOT =
   process.env["HLS_CACHE_DIR"] ??
   path.join(os.tmpdir(), ".localstream-hls");
 
-/** Seconds per HLS segment.  4 s = YouTube default, good balance of latency vs seeks. */
-const HLS_SEGMENT_DURATION = 4;
+/** Seconds per HLS segment.  2 s = finer seek granularity; player jumps to exact 2-s window. */
+const HLS_SEGMENT_DURATION = 2;
 
 // ── State ──────────────────────────────────────────────────────────────────────
 type HlsStatus = "generating" | "ready" | "error";
