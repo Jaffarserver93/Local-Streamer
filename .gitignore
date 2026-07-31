@@ -2,6 +2,9 @@
 
 # compiled output
 dist
+# Exception: api-server dist is committed so Termux can `git pull && node dist/index.mjs`
+!artifacts/api-server/dist/
+artifacts/api-server/dist/*.map
 tmp
 out-tsc
 *.tsbuildinfo
