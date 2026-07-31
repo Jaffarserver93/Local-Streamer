@@ -69,6 +69,7 @@ function initPlayer() {
     initKeyboardSeek();
     initSubtitleLoader();
     initSettingsMenu();
+    initProgressBarThumbnails();
 
     // ── Auto-save playback history for Continue Watching ───────────────────────
     let _lastSaveTime = 0;
@@ -565,7 +566,10 @@ function start2xSpeed() {
   _is2xActive = true;
   player.playbackRate(2.0);
   const badge = document.getElementById("speedBadge");
-  if (badge) badge.hidden = false;
+  if (badge) {
+    badge.hidden = false;
+    badge.style.display = "block";
+  }
 }
 
 function stop2xSpeed() {
@@ -575,7 +579,95 @@ function stop2xSpeed() {
   _is2xActive = false;
   if (player) player.playbackRate(1.0);
   const badge = document.getElementById("speedBadge");
-  if (badge) badge.hidden = true;
+  if (badge) {
+    badge.hidden = true;
+    badge.style.display = "none";
+  }
+}
+
+/* ── Progress Bar Hover Video Frame Thumbnail Preview ───────────────────────── */
+let _previewVideo = null;
+let _previewCanvas = null;
+let _previewCtx = null;
+let _previewCard = null;
+let _previewTimeLabel = null;
+let _isSeekingPreview = false;
+
+function initProgressBarThumbnails() {
+  if (!player) return;
+
+  _previewVideo = document.createElement("video");
+  _previewVideo.muted = true;
+  _previewVideo.preload = "auto";
+  _previewVideo.playsInline = true;
+  _previewVideo.style.display = "none";
+  document.body.appendChild(_previewVideo);
+
+  const progressControl = player.el().querySelector(".vjs-progress-control");
+  if (!progressControl) return;
+
+  _previewCard = document.createElement("div");
+  _previewCard.className = "vjs-thumbnail-preview";
+  _previewCard.style.display = "none";
+
+  _previewCanvas = document.createElement("canvas");
+  _previewCanvas.className = "vjs-thumbnail-canvas";
+  _previewCanvas.width = 152;
+  _previewCanvas.height = 85;
+  _previewCtx = _previewCanvas.getContext("2d");
+
+  _previewTimeLabel = document.createElement("div");
+  _previewTimeLabel.className = "vjs-thumbnail-time";
+  _previewTimeLabel.textContent = "0:00";
+
+  _previewCard.appendChild(_previewCanvas);
+  _previewCard.appendChild(_previewTimeLabel);
+  progressControl.appendChild(_previewCard);
+
+  player.on("loadstart", () => {
+    const src = player.currentSrc();
+    if (src && _previewVideo) {
+      _previewVideo.src = src;
+    }
+  });
+
+  _previewVideo.addEventListener("seeked", () => {
+    if (_previewCtx && _previewVideo && _previewVideo.readyState >= 2) {
+      try {
+        _previewCtx.drawImage(_previewVideo, 0, 0, _previewCanvas.width, _previewCanvas.height);
+      } catch (err) {
+        console.warn("Thumbnail frame draw skipped", err);
+      }
+    }
+    _isSeekingPreview = false;
+  });
+
+  let _lastSeekTime = 0;
+
+  progressControl.addEventListener("mousemove", (e) => {
+    const duration = player.duration();
+    if (!duration || !isFinite(duration) || !_previewVideo) return;
+
+    const rect = progressControl.getBoundingClientRect();
+    const mouseX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const hoverPct = mouseX / rect.width;
+    const hoverTime = hoverPct * duration;
+
+    _previewCard.style.left = `${mouseX}px`;
+    _previewCard.style.display = "flex";
+    _previewTimeLabel.textContent = formatTime(hoverTime);
+
+    const now = Date.now();
+    if (now - _lastSeekTime > 60 && !_isSeekingPreview) {
+      _lastSeekTime = now;
+      _isSeekingPreview = true;
+      _previewVideo.currentTime = hoverTime;
+    }
+  });
+
+  progressControl.addEventListener("mouseleave", () => {
+    if (_previewCard) _previewCard.style.display = "none";
+  });
 }
 
 function makeCard(filename, isLocal, _index, needsFaststart) {

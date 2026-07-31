@@ -370,17 +370,38 @@ body {
 
 /* ── Speed Badge (Hold to 2x) ────────────────────────────────────────────────── */
 .speed-badge {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 20px;
-  color: #fff; font-size: .78rem; font-weight: 700; letter-spacing: .08em;
-  padding: 5px 14px; z-index: 30; pointer-events: none;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5), 0 0 10px rgba(255, 0, 0, 0.4);
-  animation: pulseGlow 1.2s infinite alternate;
+  position: absolute; top: 45px; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 0, 0, 0.6); border-radius: 20px;
+  color: #fff; font-size: .8rem; font-weight: 800; letter-spacing: .08em;
+  padding: 6px 16px; z-index: 50; pointer-events: none;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 14px rgba(255, 0, 0, 0.5);
+  animation: pulseGlow 1s infinite alternate;
 }
 @keyframes pulseGlow {
-  0% { box-shadow: 0 4px 15px rgba(0,0,0,0.5), 0 0 8px rgba(255,0,0,0.3); }
-  100% { box-shadow: 0 4px 18px rgba(0,0,0,0.6), 0 0 16px rgba(255,0,0,0.7); }
+  0% { box-shadow: 0 4px 15px rgba(0,0,0,0.5), 0 0 8px rgba(255,0,0,0.4); transform: translateX(-50%) scale(0.98); }
+  100% { box-shadow: 0 4px 20px rgba(0,0,0,0.7), 0 0 18px rgba(255,0,0,0.8); transform: translateX(-50%) scale(1.04); }
+}
+
+/* ── Video Progress Bar Hover Frame Thumbnail Preview Card ──────────────────── */
+.vjs-thumbnail-preview {
+  position: absolute; bottom: 3em; transform: translateX(-50%);
+  width: 160px; height: 110px; border-radius: 8px; overflow: hidden;
+  background: rgba(10, 10, 15, 0.95); backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85);
+  pointer-events: none; z-index: 40; display: flex; flex-direction: column;
+  align-items: center; justify-content: space-between; padding: 4px;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.vjs-thumbnail-canvas {
+  width: 152px; height: 85px; border-radius: 4px; object-fit: cover;
+  background: #000;
+}
+.vjs-thumbnail-time {
+  font-size: .72rem; font-weight: 700; color: #fff;
+  background: rgba(0, 0, 0, 0.75); padding: 1px 6px; border-radius: 4px;
+  letter-spacing: .03em; margin-top: 2px;
 }
 
 
