@@ -220,6 +220,84 @@ body {
   bottom: 3em;
   display: flex; z-index: 20; pointer-events: none;
 }
+
+/* ── YouTube-style top seek hint banner ─────────────────────────────────────── */
+.tap-banner {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.72); backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 20px;
+  color: rgba(255, 255, 255, 0.95); font-size: .74rem; font-weight: 600;
+  letter-spacing: .04em; padding: 4px 14px; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity 0.3s ease;
+  z-index: 22; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.video-js:hover .tap-banner,
+.video-js.vjs-user-active .tap-banner { opacity: 1; }
+
+/* ── Settings Panel Popup Modal (Gear Icon) ────────────────────────────────── */
+.settings-panel {
+  position: absolute; bottom: 3.6em; right: 12px;
+  width: 290px; max-height: 80%; overflow-y: auto;
+  background: rgba(18, 18, 24, 0.94); backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  z-index: 45; color: #fff; font-size: .8rem;
+  animation: settingsPopup 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes settingsPopup {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1.0); }
+}
+.settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 700; font-size: .84rem; letter-spacing: .03em;
+}
+.settings-close-btn {
+  background: none; border: none; color: var(--muted);
+  font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1;
+  transition: color var(--ease);
+}
+.settings-close-btn:hover { color: #fff; }
+
+.settings-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 12px; }
+.settings-section { display: flex; flex-direction: column; gap: 6px; }
+.settings-section-title {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--accent);
+}
+.settings-options-list { display: flex; flex-direction: column; gap: 4px; }
+.settings-option {
+  padding: 6px 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.05);
+  cursor: pointer; font-size: .78rem; display: flex; align-items: center; justify-content: space-between;
+  transition: background var(--ease), border-color var(--ease);
+  border: 1px solid transparent;
+}
+.settings-option:hover { background: rgba(255, 255, 255, 0.12); }
+.settings-option.active {
+  background: rgba(255, 0, 0, 0.15); border-color: var(--accent);
+  font-weight: 600; color: #fff;
+}
+.settings-option.active::after { content: "✓"; color: var(--accent); font-weight: 800; }
+
+.settings-upload-btn {
+  display: inline-block; margin-top: 4px; padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.08); border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 6px; font-size: .74rem; font-weight: 600; text-align: center;
+  cursor: pointer; transition: background var(--ease), border-color var(--ease);
+}
+.settings-upload-btn:hover { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.4); }
+
+.speed-selector { display: flex; gap: 6px; flex-wrap: wrap; }
+.speed-btn {
+  flex: 1; min-width: 45px; padding: 5px 0; text-align: center;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px; color: #fff; font-size: .74rem; font-weight: 600;
+  cursor: pointer; transition: all var(--ease);
+}
+.speed-btn:hover { background: rgba(255, 255, 255, 0.18); }
+.speed-btn.active { background: var(--accent); border-color: var(--accent); font-weight: 700; }
+
 /* Left/right zones intercept clicks; center lets clicks through to Video.js */
 .tap-zone {
   flex: 1; display: flex; align-items: center; justify-content: center;

@@ -28,6 +28,22 @@ const socket = io({ transports: ["websocket", "polling"] });
 
 let player = null;
 
+// ── Custom Settings Gear Icon Button ─────────────────────────────────────────
+const Button = videojs.getComponent("Button");
+class SettingsButton extends Button {
+  constructor(player, options) {
+    super(player, options);
+    this.controlText("Settings");
+  }
+  buildCSSClass() {
+    return `vjs-settings-button ${super.buildCSSClass()}`;
+  }
+  handleClick() {
+    toggleSettingsPanel();
+  }
+}
+videojs.registerComponent("SettingsButton", SettingsButton);
+
 function initPlayer() {
   player = videojs("videoPlayer", {
     controls: true,
@@ -39,7 +55,7 @@ function initPlayer() {
       children: [
         "playToggle", "skipBackward", "skipForward",
         "volumePanel", "currentTimeDisplay", "timeDivider",
-        "durationDisplay", "progressControl", "subsCapsButton", "fullscreenToggle",
+        "durationDisplay", "progressControl", "SettingsButton", "fullscreenToggle",
       ],
     },
     inactivityTimeout: 3000,
@@ -52,6 +68,7 @@ function initPlayer() {
     initTapOverlay();
     initKeyboardSeek();
     initSubtitleLoader();
+    initSettingsMenu();
 
     // ── Auto-save playback history for Continue Watching ───────────────────────
     let _lastSaveTime = 0;
@@ -443,9 +460,117 @@ function initSubtitleLoader() {
       }, true);
 
       if (track && track.track) track.track.mode = "showing";
+      renderSubtitleTracks();
       showToast(`💬 Subtitles loaded: ${file.name}`);
     };
     reader.readAsText(file);
+  });
+}
+
+/* ── Player Settings Panel (Gear Icon) ─────────────────────────────────────── */
+function toggleSettingsPanel() {
+  const panel = document.getElementById("settingsPanel");
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) {
+    renderAudioTracks();
+    renderSubtitleTracks();
+  }
+}
+
+function renderAudioTracks() {
+  const container = document.getElementById("audioTrackList");
+  if (!container || !player) return;
+  container.innerHTML = "";
+
+  const audioTracks = player.audioTracks ? player.audioTracks() : [];
+  if (!audioTracks || audioTracks.length === 0) {
+    container.innerHTML = `<div class="settings-option active">Default Audio Stream</div>`;
+    return;
+  }
+
+  for (let i = 0; i < audioTracks.length; i++) {
+    const track = audioTracks[i];
+    const opt = document.createElement("div");
+    opt.className = "settings-option" + (track.enabled ? " active" : "");
+    opt.textContent = track.label || track.language || `Audio Track ${i + 1}`;
+    opt.onclick = () => {
+      for (let j = 0; j < audioTracks.length; j++) audioTracks[j].enabled = (i === j);
+      renderAudioTracks();
+      showToast(`🔊 Switched to ${opt.textContent}`);
+    };
+    container.appendChild(opt);
+  }
+}
+
+function renderSubtitleTracks() {
+  const container = document.getElementById("subtitleTrackList");
+  if (!container || !player) return;
+  container.innerHTML = "";
+
+  const remoteTracks = player.remoteTextTracks ? player.remoteTextTracks() : [];
+  let isAnyShowing = false;
+  if (remoteTracks) {
+    for (let i = 0; i < remoteTracks.length; i++) {
+      if (remoteTracks[i].mode === "showing") isAnyShowing = true;
+    }
+  }
+
+  const offOpt = document.createElement("div");
+  offOpt.className = "settings-option" + (!isAnyShowing ? " active" : "");
+  offOpt.textContent = "Off";
+  offOpt.onclick = () => {
+    if (remoteTracks) {
+      for (let i = 0; i < remoteTracks.length; i++) remoteTracks[i].mode = "disabled";
+    }
+    renderSubtitleTracks();
+    showToast("💬 Subtitles turned Off");
+  };
+  container.appendChild(offOpt);
+
+  if (!remoteTracks || remoteTracks.length === 0) return;
+
+  for (let i = 0; i < remoteTracks.length; i++) {
+    const track = remoteTracks[i];
+    if (track.kind !== "subtitles" && track.kind !== "captions") continue;
+    const opt = document.createElement("div");
+    opt.className = "settings-option" + (track.mode === "showing" ? " active" : "");
+    opt.textContent = track.label || track.language || `Subtitle Track ${i + 1}`;
+    opt.onclick = () => {
+      for (let j = 0; j < remoteTracks.length; j++) {
+        remoteTracks[j].mode = (remoteTracks[i] === remoteTracks[j]) ? "showing" : "disabled";
+      }
+      renderSubtitleTracks();
+      showToast(`💬 Subtitles: ${opt.textContent}`);
+    };
+    container.appendChild(opt);
+  }
+}
+
+function initSettingsMenu() {
+  const closeBtn = document.getElementById("closeSettingsBtn");
+  closeBtn?.addEventListener("click", () => {
+    const panel = document.getElementById("settingsPanel");
+    if (panel) panel.hidden = true;
+  });
+
+  const speedBtns = document.querySelectorAll(".speed-btn");
+  speedBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const speed = parseFloat(btn.dataset.speed || "1.0");
+      if (player) player.playbackRate(speed);
+      speedBtns.forEach((b) => b.classList.toggle("active", b === btn));
+      showToast(`⚡ Speed: ${speed}x`);
+    });
+  });
+
+  // Close panel if clicked outside
+  document.addEventListener("click", (e) => {
+    const panel = document.getElementById("settingsPanel");
+    if (!panel || panel.hidden) return;
+    if (!e.target.closest("#settingsPanel") && !e.target.closest(".vjs-settings-button")) {
+      panel.hidden = true;
+    }
   });
 }
 

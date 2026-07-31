@@ -53,6 +53,8 @@
         <!-- Netflix-style tap overlay: left −5s | center play/pause | right +5s -->
         <div id="tapOverlay" class="tap-overlay" aria-hidden="true">
 
+          <div id="tapBanner" class="tap-banner">◄◄◄ Double tap left or right to skip 5 seconds ►►►</div>
+
           <div class="tap-zone tap-zone-left" id="tapZoneLeft" aria-label="Skip back 5 seconds">
             <div class="tap-icon-wrap" id="tapIconLeft">
               <div class="tap-ripple"></div>
@@ -87,6 +89,44 @@
         <!-- 2x speed badge overlay -->
         <div id="speedBadge" class="speed-badge" hidden>2X SPEED ▶▶</div>
 
+        <!-- Player Settings Panel Popup (Gear Icon) -->
+        <div id="settingsPanel" class="settings-panel" hidden>
+          <div class="settings-header">
+            <span>⚙ Player Settings</span>
+            <button id="closeSettingsBtn" class="settings-close-btn">&times;</button>
+          </div>
+          <div class="settings-body">
+            <div class="settings-section">
+              <div class="settings-section-title">🔊 Audio Track</div>
+              <div id="audioTrackList" class="settings-options-list">
+                <div class="settings-option active">Default Audio</div>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <div class="settings-section-title">💬 Subtitles</div>
+              <div id="subtitleTrackList" class="settings-options-list">
+                <div class="settings-option active">Off</div>
+              </div>
+              <label class="settings-upload-btn">
+                <input type="file" id="subInput" accept=".srt,.vtt" hidden>
+                <span>＋ Load Subtitle File (.srt / .vtt)</span>
+              </label>
+            </div>
+
+            <div class="settings-section">
+              <div class="settings-section-title">⚡ Playback Speed</div>
+              <div class="speed-selector">
+                <button class="speed-btn" data-speed="0.5">0.5x</button>
+                <button class="speed-btn active" data-speed="1.0">1.0x</button>
+                <button class="speed-btn" data-speed="1.25">1.25x</button>
+                <button class="speed-btn" data-speed="1.5">1.5x</button>
+                <button class="speed-btn" data-speed="2.0">2.0x</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Auto-resume notification toast -->
         <div id="resumeToast" class="resume-toast" hidden>
           <span id="resumeText" class="resume-text"></span>
@@ -102,10 +142,6 @@
       <div id="nowPlaying" class="now-playing" hidden>
         <span class="now-playing-label">NOW PLAYING</span>
         <span id="nowPlayingName" class="now-playing-name"></span>
-        <label class="sub-upload-label" title="Load .srt or .vtt subtitles">
-          <input type="file" id="subInput" accept=".srt,.vtt" hidden>
-          <span>💬 Subtitles</span>
-        </label>
       </div>
     </section>
 
