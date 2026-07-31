@@ -1222,10 +1222,23 @@ async function playViaServer(filename) {
       hlsState.set(filename, "ready");
       switchToHls(filename);
     } else if (body.status === "generating") {
-      // Segments still building — stay on direct streaming (Range requests = instant seek).
-      // The hls-ready socket event will switch us over once the full cache is done.
       hlsState.set(filename, "generating");
       updateHlsCardState(filename, "generating", body.segments ?? 0, body.transcoding);
+
+      // If direct stream has an error or already has >=1 segment, switch to HLS right away
+      if (player.error() || (body.segments && body.segments >= 1)) {
+        switchToHls(filename);
+      } else {
+        // Poll for first segment to switch quickly if direct stream stalls or errors out
+        const hlsPoll = setInterval(() => {
+          if (filename !== activeFilename) { clearInterval(hlsPoll); return; }
+          if (player.error() || (player.buffered() && player.buffered().length === 0)) {
+            switchToHls(filename);
+            clearInterval(hlsPoll);
+          }
+        }, 700);
+        setTimeout(() => clearInterval(hlsPoll), 7000);
+      }
     }
   } catch { /* network hiccup — direct stream keeps playing */ }
 }
