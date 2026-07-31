@@ -368,19 +368,19 @@ body {
 .placeholder-icon { font-size: 2.6rem; opacity: .3; }
 .player-placeholder p { font-size: .82rem; text-align: center; max-width: 200px; }
 
-/* ── Speed Badge (Hold to 2x) ────────────────────────────────────────────────── */
+/* ── Speed Badge (Hold to 2x - YouTube Pill Style) ─────────────────────────── */
 .speed-badge {
-  position: absolute; top: 45px; left: 50%; transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 0, 0, 0.6); border-radius: 20px;
-  color: #fff; font-size: .8rem; font-weight: 800; letter-spacing: .08em;
-  padding: 6px 16px; z-index: 50; pointer-events: none;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 14px rgba(255, 0, 0, 0.5);
-  animation: pulseGlow 1s infinite alternate;
+  position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.76); backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 24px;
+  color: #ffffff; font-size: .86rem; font-weight: 500; letter-spacing: .01em;
+  padding: 7px 22px; z-index: 50; pointer-events: none; white-space: nowrap;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  animation: badgeFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
-@keyframes pulseGlow {
-  0% { box-shadow: 0 4px 15px rgba(0,0,0,0.5), 0 0 8px rgba(255,0,0,0.4); transform: translateX(-50%) scale(0.98); }
-  100% { box-shadow: 0 4px 20px rgba(0,0,0,0.7), 0 0 18px rgba(255,0,0,0.8); transform: translateX(-50%) scale(1.04); }
+@keyframes badgeFadeIn {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* ── Video Progress Bar Hover Frame Thumbnail Preview Card ──────────────────── */

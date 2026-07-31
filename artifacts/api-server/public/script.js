@@ -567,6 +567,7 @@ function start2xSpeed() {
   player.playbackRate(2.0);
   const badge = document.getElementById("speedBadge");
   if (badge) {
+    badge.textContent = "Playing at 2x speed";
     badge.hidden = false;
     badge.style.display = "block";
   }
