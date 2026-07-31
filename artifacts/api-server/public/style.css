@@ -212,36 +212,69 @@ body {
 .video-js .vjs-time-divider { padding: 0; min-width: unset; }
 .video-js .vjs-duration { color: rgba(255,255,255,.6); }
 
-/* ── Seek overlays ───────────────────────────────────────────────────────────── */
-.seek-overlay {
-  position: absolute; top: 0; bottom: 0; width: 40%;
-  pointer-events: none; display: flex; align-items: center;
-  justify-content: center; opacity: 0;
-  transition: opacity .15s ease; z-index: 20;
+/* ── Netflix-style tap overlay ───────────────────────────────────────────────── */
+.tap-overlay {
+  position: absolute; inset: 0;
+  display: flex; z-index: 20; pointer-events: none;
 }
-.seek-overlay.seek-left  { left: 0; }
-.seek-overlay.seek-right { right: 0; }
-.seek-overlay.active     { opacity: 1; }
-.seek-ripple {
-  position: absolute; width: 80px; height: 80px;
-  border-radius: 50%; background: rgba(255,255,255,.15);
-  transform: scale(0); animation: none;
+/* Left/right zones intercept clicks; center lets clicks through to Video.js */
+.tap-zone {
+  flex: 1; display: flex; align-items: center; justify-content: center;
 }
-.seek-overlay.active .seek-ripple { animation: seekRipple .55s ease forwards; }
-@keyframes seekRipple {
-  0%  { transform: scale(0);   opacity: .6; }
-  70% { transform: scale(1.6); opacity: .15; }
-  100%{ transform: scale(2);   opacity: 0; }
+.tap-zone-left,
+.tap-zone-right { pointer-events: all; cursor: pointer; }
+.tap-zone-center { pointer-events: none; }
+
+/* Icon wrapper — invisible until .tap-anim fires */
+.tap-icon-wrap {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  opacity: 0; pointer-events: none;
 }
-.seek-label {
-  position: relative; z-index: 1;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  transform: translateY(4px); transition: transform .15s ease;
+.tap-icon-wrap.tap-anim {
+  animation: tapPop .72s cubic-bezier(.22,.68,0,1.1) forwards;
 }
-.seek-overlay.active .seek-label { transform: translateY(0); }
-.seek-arrows { font-size: 1.3rem; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
-.seek-secs   { font-size: .7rem; font-weight: 700; color: rgba(255,255,255,.85);
-               text-transform: uppercase; letter-spacing: .06em; }
+@keyframes tapPop {
+  0%   { opacity: 0; transform: scale(0.55); }
+  18%  { opacity: 1; transform: scale(1.18); }
+  38%  { opacity: 1; transform: scale(1.0);  }
+  68%  { opacity: 1; transform: scale(1.0);  }
+  100% { opacity: 0; transform: scale(0.92); }
+}
+
+/* Expanding ring ripple */
+.tap-ripple {
+  position: absolute;
+  width: 0; height: 0;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255,255,255,.72);
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  pointer-events: none;
+}
+.tap-icon-wrap.tap-anim .tap-ripple {
+  animation: tapRipple .72s ease-out forwards;
+}
+@keyframes tapRipple {
+  0%   { width: 48px;  height: 48px;  opacity: .85; }
+  100% { width: 148px; height: 148px; opacity: 0;   }
+}
+
+/* Skip icons */
+.tap-svg {
+  width: 58px; height: 58px;
+  filter: drop-shadow(0 2px 10px rgba(0,0,0,.65));
+}
+.tap-secs-label {
+  font-size: .8rem; font-weight: 700; color: rgba(255,255,255,.92);
+  letter-spacing: .07em; text-shadow: 0 1px 5px rgba(0,0,0,.7);
+}
+
+/* Center play/pause icon */
+.tap-play-pause {
+  display: flex; align-items: center; justify-content: center;
+  filter: drop-shadow(0 2px 10px rgba(0,0,0,.65));
+}
 
 /* ── Placeholder ─────────────────────────────────────────────────────────────── */
 .player-placeholder {

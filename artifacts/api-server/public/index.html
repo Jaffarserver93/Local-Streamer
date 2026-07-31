@@ -50,14 +50,38 @@
         <video id="videoPlayer" class="video-js vjs-default-skin"
           preload="auto" playsinline></video>
 
-        <!-- Double-tap seek overlays -->
-        <div id="seekOverlayLeft"  class="seek-overlay seek-left"  aria-hidden="true">
-          <div class="seek-ripple"></div>
-          <div class="seek-label"><span class="seek-arrows">&#9664;&#9664;</span><span class="seek-secs">5 sec</span></div>
-        </div>
-        <div id="seekOverlayRight" class="seek-overlay seek-right" aria-hidden="true">
-          <div class="seek-ripple"></div>
-          <div class="seek-label"><span class="seek-secs">5 sec</span><span class="seek-arrows">&#9654;&#9654;</span></div>
+        <!-- Netflix-style tap overlay: left −5s | center play/pause | right +5s -->
+        <div id="tapOverlay" class="tap-overlay" aria-hidden="true">
+
+          <div class="tap-zone tap-zone-left" id="tapZoneLeft" aria-label="Skip back 5 seconds">
+            <div class="tap-icon-wrap" id="tapIconLeft">
+              <div class="tap-ripple"></div>
+              <svg class="tap-svg" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M36.3 13.7A16 16 0 1 1 24 8" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                <polyline points="29,4 24,8 29,12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tap-secs-label">-5s</span>
+            </div>
+          </div>
+
+          <div class="tap-zone tap-zone-center" id="tapZoneCenter">
+            <div class="tap-icon-wrap" id="tapIconCenter">
+              <div class="tap-ripple"></div>
+              <div id="tapPlayPause" class="tap-play-pause"></div>
+            </div>
+          </div>
+
+          <div class="tap-zone tap-zone-right" id="tapZoneRight" aria-label="Skip forward 5 seconds">
+            <div class="tap-icon-wrap" id="tapIconRight">
+              <div class="tap-ripple"></div>
+              <svg class="tap-svg" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.7 13.7A16 16 0 1 0 24 8" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+                <polyline points="19,4 24,8 19,12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="tap-secs-label">+5s</span>
+            </div>
+          </div>
+
         </div>
 
         <div id="playerPlaceholder" class="player-placeholder">

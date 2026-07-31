@@ -49,7 +49,7 @@ function initPlayer() {
   });
 
   player.ready(() => {
-    initSeekOverlays();
+    initTapOverlay();
     initKeyboardSeek();
 
     // ── YouTube-like seeking: restart HLS from wherever the user scrubs ───────
@@ -136,39 +136,62 @@ socket.on("faststart-error", ({ filename, error }) => {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   §4  Double-click / double-tap ±5 s seek
+   §4  Tap / click seek overlays  (Netflix-style)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const SEEK_S = 5;
-let seekTimer = null;
 
-function initSeekOverlays() {
-  const el = player.el();
-  el.addEventListener("dblclick", (e) => {
-    if (e.target.closest(".vjs-control-bar")) return;
-    const right = e.clientX - el.getBoundingClientRect().left > el.offsetWidth / 2;
-    seek(right ? SEEK_S : -SEEK_S, right);
-    // Prevent browser fullscreen exit and stop Video.js from seeing the event
+/** Fire the pop+ripple animation on a tap icon. */
+function animateTap(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove("tap-anim");
+  void el.offsetWidth; // force reflow so animation restarts cleanly
+  el.classList.add("tap-anim");
+  clearTimeout(el._tapTimer);
+  el._tapTimer = setTimeout(() => el.classList.remove("tap-anim"), 800);
+}
+
+/** SVG icons used in the center play/pause tap zone. */
+const SVG_PLAY  = `<svg viewBox="0 0 24 24" fill="white" width="52" height="52"><polygon points="5,3 19,12 5,21"/></svg>`;
+const SVG_PAUSE = `<svg viewBox="0 0 24 24" fill="white" width="52" height="52"><rect x="4" y="3" width="5" height="18" rx="1"/><rect x="15" y="3" width="5" height="18" rx="1"/></svg>`;
+
+function initTapOverlay() {
+  const tapPlayPause = document.getElementById("tapPlayPause");
+
+  // Left zone — single click seeks −5 s
+  document.getElementById("tapZoneLeft").addEventListener("click", (e) => {
+    if (!activeFilename) return;
     e.preventDefault();
     e.stopPropagation();
-  }, true); // capture phase so we beat any other handlers
+    seek(-SEEK_S, false);
+  });
+
+  // Right zone — single click seeks +5 s
+  document.getElementById("tapZoneRight").addEventListener("click", (e) => {
+    if (!activeFilename) return;
+    e.preventDefault();
+    e.stopPropagation();
+    seek(SEEK_S, true);
+  });
+
+  // Center zone — pointer-events:none so Video.js handles play/pause;
+  // we listen on the player element to catch those clicks and show the icon.
+  player.el().addEventListener("click", (e) => {
+    if (!activeFilename) return;
+    if (e.target.closest(".vjs-control-bar")) return;
+    if (e.target.closest("#tapZoneLeft") || e.target.closest("#tapZoneRight")) return;
+    // Show the state the video is BECOMING (current state flips after this event)
+    tapPlayPause.innerHTML = player.paused() ? SVG_PLAY : SVG_PAUSE;
+    animateTap("tapIconCenter");
+  });
 }
 
 function seek(delta, isForward) {
   if (!player) return;
   const next = Math.min(Math.max((player.currentTime() || 0) + delta, 0), player.duration() || Infinity);
   player.currentTime(next);
-  flashOverlay(isForward);
-}
-
-function flashOverlay(isForward) {
-  const el = document.getElementById(isForward ? "seekOverlayRight" : "seekOverlayLeft");
-  if (!el) return;
-  el.classList.remove("active");
-  void el.offsetWidth;
-  el.classList.add("active");
-  clearTimeout(seekTimer);
-  seekTimer = setTimeout(() => el.classList.remove("active"), 650);
+  animateTap(isForward ? "tapIconRight" : "tapIconLeft");
 }
 
 
