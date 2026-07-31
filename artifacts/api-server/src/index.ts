@@ -24,7 +24,7 @@ import path                     from "node:path";
 import os                       from "node:os";
 import { Server }               from "socket.io";
 import app                      from "./app.js";
-import { setIO, getGlobalState, livePosition } from "./routes/videos.js";
+import { setIO }                from "./routes/videos.js";
 import { setHlsIO }             from "./routes/hls.js";
 import { logger, logFile }      from "./lib/logger.js";
 
@@ -95,23 +95,6 @@ if (httpsServer) {
 
 setIO(io);
 setHlsIO(io);
-
-// ── Socket.io connection handler ───────────────────────────────────────────────
-io.on("connection", (socket) => {
-  socket.on("ping-sync", (clientTime: number) => {
-    socket.emit("pong-sync", { clientTime, serverTime: Date.now() });
-  });
-
-  const state = getGlobalState();
-  if (state.currentVideo) {
-    socket.emit("play", {
-      filename:   state.currentVideo,
-      position:   livePosition(),
-      serverTime: Date.now(),
-      paused:     !state.isPlaying,
-    });
-  }
-});
 
 // ── TCP multiplexer — HTTP and HTTPS on the same port ─────────────────────────
 /**

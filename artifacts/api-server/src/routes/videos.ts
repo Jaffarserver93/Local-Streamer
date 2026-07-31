@@ -5,15 +5,12 @@
  *   GET  /api/videos          — list video files in currentVideoDir
  *   GET  /api/video-dir       — return currentVideoDir path
  *   POST /api/set-video-dir   — change currentVideoDir at runtime
- *   POST /api/play            — broadcast "play" to ALL connected clients
- *   POST /api/pause           — broadcast "pause"
- *   POST /api/resume          — broadcast "resume"
- *   POST /api/seek            — broadcast "seek"
  *   POST /api/upload          — upload a video file to the library
+ *   POST /api/faststart/:fn   — remux MP4 in-place for faster start
  *   GET  /video/:filename     — HTTP 206 Range streaming
  *
- * Socket.io replaces SSE for real-time sync. All state changes are broadcast
- * via io.emit() which Socket.io delivers over WebSocket in <10 ms.
+ * Each browser session is fully independent — no shared playback state.
+ * Socket.io is only used for library change notifications (upload, faststart).
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
@@ -93,28 +90,6 @@ function checkNeedsFaststart(filePath: string): boolean {
   } catch { return false; }
 }
 
-// ── Global playback state ──────────────────────────────────────────────────────
-/**
- * Single in-memory session shared by all connected devices.
- * New tabs receive this state on connect so they jump straight to the right
- * video and position without any manual "join room" step.
- */
-let globalState = {
-  currentVideo:          null as string | null,
-  isPlaying:             false,
-  lastPosition:          0,          // seconds at the time lastUpdatedServerTime was recorded
-  lastUpdatedServerTime: Date.now(), // server ms timestamp of last position update
-};
-
-/** Calculate the live playback position right now (accounts for elapsed time). */
-export function livePosition(): number {
-  if (!globalState.currentVideo) return 0;
-  if (!globalState.isPlaying)    return globalState.lastPosition;
-  return globalState.lastPosition + (Date.now() - globalState.lastUpdatedServerTime) / 1000;
-}
-
-export function getGlobalState() { return globalState; }
-
 // ── Socket.io instance ─────────────────────────────────────────────────────────
 let io: IOServer | null = null;
 
@@ -123,10 +98,7 @@ export function setIO(ioInstance: IOServer): void {
   io = ioInstance;
 }
 
-/**
- * Broadcast a named event with payload to ALL connected clients simultaneously.
- * This is how one phone's tap instantly controls every TV and other phone.
- */
+/** Notify all clients of library changes (upload, faststart). */
 function broadcast(event: string, data: unknown): void {
   io?.emit(event, data);
 }
@@ -182,59 +154,6 @@ const upload = multer({
 });
 
 const router: IRouter = Router();
-
-// ── POST /api/play ─────────────────────────────────────────────────────────────
-/**
- * Phone taps a library card → POST /api/play → broadcast to all screens.
- * Includes serverTime so clients can apply NTP-corrected position offset.
- */
-router.post("/api/play", (req: Request, res: Response) => {
-  const body     = req.body as Record<string, unknown>;
-  const filename = body["filename"];
-  const position = Number(body["position"]) || 0;
-
-  if (!filename || typeof filename !== "string") {
-    res.status(400).json({ error: "Body must contain { filename: string }" });
-    return;
-  }
-
-  const now = Date.now();
-  globalState = { currentVideo: filename, isPlaying: true, lastPosition: position, lastUpdatedServerTime: now };
-  broadcast("play", { filename, position, serverTime: now, paused: false });
-  res.json({ success: true });
-});
-
-// ── POST /api/pause ────────────────────────────────────────────────────────────
-router.post("/api/pause", (req: Request, res: Response) => {
-  const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
-  const now = Date.now();
-  globalState.isPlaying = false;
-  globalState.lastPosition = position;
-  globalState.lastUpdatedServerTime = now;
-  broadcast("pause", { position, serverTime: now });
-  res.json({ success: true });
-});
-
-// ── POST /api/resume ───────────────────────────────────────────────────────────
-router.post("/api/resume", (req: Request, res: Response) => {
-  const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
-  const now = Date.now();
-  globalState.isPlaying = true;
-  globalState.lastPosition = position;
-  globalState.lastUpdatedServerTime = now;
-  broadcast("resume", { position, serverTime: now });
-  res.json({ success: true });
-});
-
-// ── POST /api/seek ─────────────────────────────────────────────────────────────
-router.post("/api/seek", (req: Request, res: Response) => {
-  const position = Number((req.body as Record<string, unknown>)["position"]) || 0;
-  const now = Date.now();
-  globalState.lastPosition = position;
-  globalState.lastUpdatedServerTime = now;
-  broadcast("seek", { position, serverTime: now });
-  res.json({ success: true });
-});
 
 // ── GET /api/video-dir ─────────────────────────────────────────────────────────
 router.get("/api/video-dir", (_req: Request, res: Response) => {

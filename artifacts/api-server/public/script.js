@@ -1,131 +1,37 @@
 /**
  * script.js — Local Stream
  *
- * ─── How synchronized playback works ─────────────────────────────────────────
- *
- *   Any device on the page automatically joins the single global session.
- *   When ANY user taps a video or hits play/pause/seek, that action is
- *   broadcast via Socket.io to every connected device simultaneously.
- *
- *   CLOCK SYNC (NTP-style)
- *   ──────────────────────
- *   On connect (and every 30 s), the client sends a ping-sync with its local
- *   timestamp. The server echoes it back with its own timestamp. The client
- *   calculates round-trip latency and derives a clock offset so that when the
- *   server says "position=42.3 at serverTime=T", the client can compute the
- *   live position as: 42.3 + (serverNow() - T) / 1000  — accurate to <50 ms.
- *
- *   PHONE → SERVER → ALL SCREENS
- *   ─────────────────────────────
- *   Tap video card  →  POST /api/play  →  socket.emit("play", ...)  →  all clients
- *   Tap pause       →  POST /api/pause →  socket.emit("pause", ...) →  all clients
- *   Seek scrubber   →  POST /api/seek  →  socket.emit("seek", ...)  →  all clients
+ * Each browser/TV is an independent viewer — pick any video from the library
+ * and it plays only on your screen.  Socket.io is used only for HLS progress
+ * events and library-change notifications (upload, faststart fix).
  *
  * Sections:
- *   §1  Clock sync
- *   §2  Video.js player
- *   §3  Socket.io sync listener
- *   §4  Double-tap ±5 s seek
- *   §5  Keyboard / TV remote
- *   §6  Video library
- *   §7  Upload (Add to library)
- *   §8  Folder picker
- *   §9  Playback router
- *   §10 Boot
+ *   §1  Video.js player
+ *   §2  Socket.io events (HLS + library)
+ *   §3  Double-tap ±5 s seek
+ *   §4  Keyboard / TV remote
+ *   §5  Video library
+ *   §6  Upload (Add to library)
+ *   §7  Folder picker
+ *   §8  Playback router
+ *   §9  Boot
  */
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   §1  Clock sync  (NTP-style offset calculation)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/**
- * Estimated offset in ms between our clock and the server's clock.
- *   serverTime ≈ Date.now() + clockOffset
- * Starts at 0 (assume clocks match) and converges quickly after the first ping.
- */
-let clockOffset = 0;
-
-/** Returns the current server time estimated from our local clock. */
-function serverNow() {
-  return Date.now() + clockOffset;
-}
-
-/**
- * Send a ping to the server. Server echoes clientTime + serverTime.
- * We measure round-trip, halve it to estimate one-way latency, then derive offset.
- */
-function sendClockPing() {
-  socket.emit("ping-sync", Date.now());
-}
 
 // ── Socket.io connection ───────────────────────────────────────────────────────
-// The socket.io client script is served automatically by the server at
-// /socket.io/socket.io.js — no CDN or bundler needed.
+// Used only for HLS progress events and library change notifications.
 const socket = io({ transports: ["websocket", "polling"] });
-
-const syncIndicator = document.getElementById("syncIndicator");
-
-socket.on("connect", () => {
-  if (syncIndicator) syncIndicator.title = "Connected ⚡";
-  sendClockPing();
-  // Repeat every 30 s to keep clock offset accurate as clocks drift
-  setInterval(sendClockPing, 30_000);
-});
-
-socket.on("disconnect", () => {
-  if (syncIndicator) syncIndicator.classList.add("disconnected");
-});
-
-socket.on("reconnect", () => {
-  if (syncIndicator) syncIndicator.classList.remove("disconnected");
-  sendClockPing();
-});
-
-socket.on("pong-sync", ({ clientTime, serverTime }) => {
-  const t1  = Date.now();
-  const rtt = t1 - clientTime;          // round-trip latency in ms
-  // Estimate when the server timestamp was recorded: halfway through the RTT
-  const offset = serverTime - clientTime - rtt / 2;
-  // Smooth: blend 80% old + 20% new to avoid jumps from network jitter
-  clockOffset = clockOffset * 0.8 + offset * 0.2;
-  if (syncIndicator) {
-    syncIndicator.title = `Synced ⚡ offset=${Math.round(clockOffset)}ms rtt=${rtt}ms`;
-  }
-});
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   §2  Video.js player
+   §1  Video.js player
    ═══════════════════════════════════════════════════════════════════════════ */
 
 let player = null;
 
-/**
- * True while we are applying an incoming Socket.io event.
- * Prevents the player's own event listeners from re-broadcasting the change
- * back to the server and creating an infinite echo loop.
- */
-let applyingSync = false;
-
-/**
- * Holds a "play" event that arrived before Video.js was ready.
- * Applied immediately once the player reports ready.
- */
-let pendingSync = null;
-
-/** POST a sync command to the server (fire-and-forget). */
-function postSync(url, body) {
-  fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }).catch(() => {});
-}
-
 function initPlayer() {
   player = videojs("videoPlayer", {
     controls: true,
-    preload: "auto",   // buffer aggressively — avoids mid-playback stalls
+    preload: "auto",
     playsinline: true,
     techOrder: ["html5"],
     controlBar: {
@@ -143,66 +49,19 @@ function initPlayer() {
     initSeekOverlays();
     initKeyboardSeek();
 
-    // Flush any sync event that arrived before the player was ready
-    if (pendingSync) {
-      const snap = pendingSync;
-      pendingSync = null;
-      applyPlayEvent(snap);
-    }
-
-    // ── Scrub-while-dragging broadcast ────────────────────────────────────────
-    // Fire seek updates every 80 ms while the user is dragging the scrubber,
-    // so all other tabs move their timeline in real-time.
-    let seekBroadcastInterval = null;
-
-    function startSeekBroadcast() {
-      if (seekBroadcastInterval) return;
-      seekBroadcastInterval = setInterval(() => {
-        if (!activeFilename) return;
-        postSync("/api/seek", { position: player.currentTime() || 0 });
-      }, 80);
-    }
-    function stopSeekBroadcast() {
-      if (seekBroadcastInterval) { clearInterval(seekBroadcastInterval); seekBroadcastInterval = null; }
-    }
-
-    player.on("pause", () => {
-      if (applyingSync || !activeFilename) return;
-      postSync("/api/pause", { position: player.currentTime() || 0 });
-    });
-
-    player.on("play", () => {
-      if (applyingSync || !activeFilename) return;
-      postSync("/api/resume", { position: player.currentTime() || 0 });
-    });
-
-    // Start broadcasting as soon as the user begins dragging
-    player.on("seeking", () => {
-      if (applyingSync || !activeFilename) return;
-      startSeekBroadcast();
-    });
-
-    // Send one final accurate position on release, then stop.
-    // Also trigger a server-side HLS seek restart for YouTube-like instant seeking.
+    // ── YouTube-like seeking: restart HLS from wherever the user scrubs ───────
     player.on("seeked", () => {
-      stopSeekBroadcast();
-      if (applyingSync || !activeFilename) return;
-
+      if (!activeFilename) return;
       const position = player.currentTime() || 0;
-      postSync("/api/seek", { position });
 
-      // ── YouTube-like seek: restart HLS from the new position ───────────────
-      // If we're on direct streaming (or a seek-based HLS that may not cover this
-      // position), ask the server to restart ffmpeg at the seek point.
-      // The first HLS segment is ready in ~1 s; hls-segment fires → we switch.
-      const src      = player.currentSrc() || "";
-      const onHls    = src.includes("/api/hls/");
-      const hlsFull  = hlsState.get(activeFilename) === "ready";
-
-      // If on a fully-ready full-file HLS cache, Video.js handles seeking natively — nothing to do.
+      // If on a fully-ready full-file HLS cache, Video.js handles it natively.
+      const src     = player.currentSrc() || "";
+      const onHls   = src.includes("/api/hls/");
+      const hlsFull = hlsState.get(activeFilename) === "ready";
       if (onHls && hlsFull) return;
 
-      // Otherwise, request a seek-aware HLS restart.
+      // Otherwise, restart ffmpeg from the seek position.
+      // The first HLS segment is ready in ~1 s → hls-segment fires → switch.
       if (!currentVideoDir) return;
       pendingHlsSeek = { filename: activeFilename, position };
 
@@ -215,26 +74,19 @@ function initPlayer() {
         }
       ).then(r => r.json()).then(body => {
         if (!activeFilename) return;
-        if (body.status === "ready") {
-          // Full cache already covers everything — switch and seek natively
-          pendingHlsSeek = null;
-          switchToHlsAt(activeFilename, position);
-        } else if (body.status === "generating") {
-          // Already within the cached region — switch now
+        if (body.status === "ready" || body.status === "generating") {
           pendingHlsSeek = null;
           switchToHlsAt(activeFilename, position);
         }
-        // status === "started": wait for hls-segment event (handled above)
+        // status === "started" → wait for hls-segment event
       }).catch(() => { pendingHlsSeek = null; });
     });
 
     player.on("error", () => {
       const err = player.error();
-      // If we were on HLS and it failed, automatically fall back to direct streaming.
-      // This covers: Termux /tmp path differences, segment not ready, any HLS hiccup.
       const src = player.currentSrc() || "";
       if (src.includes("/api/hls/") && activeFilename) {
-        console.warn("HLS failed, falling back to direct stream", err);
+        console.warn("HLS error, falling back to direct stream", err);
         try { player.error(null); } catch {}
         fallbackDirectPlay(activeFilename);
         return;
@@ -254,80 +106,8 @@ function initPlayer() {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   §3  Socket.io sync listener
-   Receives real-time play/pause/seek/library events from the server.
+   §2  Socket.io events  (HLS progress + library changes)
    ═══════════════════════════════════════════════════════════════════════════ */
-
-/**
- * Apply a position from the server, accounting for the clock offset and any
- * time that has elapsed since the server recorded the state.
- *
- * @param {number} position     - position in seconds at the time serverTime was recorded
- * @param {number} serverTime   - server ms timestamp when position was captured
- * @param {boolean} paused      - whether the stream is paused
- */
-function applyPosition(position, serverTime, paused) {
-  if (!player) return;
-  const livePos = paused
-    ? position
-    : position + (serverNow() - serverTime) / 1000;
-  const clamped = Math.max(0, livePos);
-  if (player.readyState() >= 1) {
-    player.currentTime(clamped);
-  } else {
-    player.one("loadedmetadata", () => player.currentTime(clamped));
-  }
-}
-
-socket.on("play", ({ filename, position = 0, serverTime = Date.now(), paused = false }) => {
-  if (!filename) return;
-  if (!player) {
-    // Player not initialised yet (socket connected before window.load finished).
-    // Store and replay once player.ready() fires.
-    pendingSync = { filename, position, serverTime, paused };
-    return;
-  }
-  applyPlayEvent({ filename, position, serverTime, paused });
-});
-
-function applyPlayEvent({ filename, position, serverTime, paused }) {
-  applyingSync = true;
-  playViaServer(filename).then(() => {
-    applyPosition(position, serverTime, paused);
-    if (paused) {
-      if (player.readyState() >= 1) player.pause();
-      else player.one("loadedmetadata", () => { applyingSync = true; player.pause(); });
-    }
-    setTimeout(() => { applyingSync = false; }, 300);
-  });
-}
-
-socket.on("pause", ({ position, serverTime = Date.now() }) => {
-  if (!player || !activeFilename) return;
-  applyingSync = true;
-  if (position != null) player.currentTime(position);
-  player.pause();
-  setTimeout(() => { applyingSync = false; }, 150);
-});
-
-socket.on("resume", ({ position, serverTime = Date.now() }) => {
-  if (!player || !activeFilename) return;
-  applyingSync = true;
-  // Apply live position: account for time elapsed since the server recorded it
-  const livePos = position + (serverNow() - serverTime) / 1000;
-  player.currentTime(Math.max(0, livePos));
-  player.play().catch(() => {});
-  setTimeout(() => { applyingSync = false; }, 200);
-});
-
-socket.on("seek", ({ position, serverTime = Date.now() }) => {
-  if (!player || !activeFilename) return;
-  applyingSync = true;
-  player.currentTime(Math.max(0, position));
-  // Use a timeout instead of player.one("seeked") — seeked can be delayed
-  // by buffering and leave applyingSync stuck as true indefinitely.
-  setTimeout(() => { applyingSync = false; }, 600);
-});
 
 socket.on("library-updated", () => {
   loadServerVideos();
@@ -347,9 +127,7 @@ socket.on("faststart-error", ({ filename, error }) => {
   const card = videoList.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
   if (card) {
     const row = card.querySelector(".faststart-row");
-    if (row) {
-      row.innerHTML = `<span class="faststart-error">✖ ${esc(error)}</span>`;
-    }
+    if (row) row.innerHTML = `<span class="faststart-error">✖ ${esc(error)}</span>`;
   }
 });
 
@@ -680,20 +458,9 @@ let activeFilename  = null;
 /** Last known video directory — stored so the seeked handler can call /api/hls/seek without a round-trip. */
 let currentVideoDir = "";
 
-/**
- * Broadcast a play command to ALL connected clients (including yourself).
- * The socket "play" listener in §3 handles the actual playback for everyone.
- */
-async function broadcastPlay(filename) {
-  try {
-    await fetch("/api/play", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename, position: 0 }),
-    });
-  } catch (e) {
-    console.warn("broadcastPlay failed:", e);
-  }
+/** Play a video on this screen only. */
+function broadcastPlay(filename) {
+  playViaServer(filename);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
