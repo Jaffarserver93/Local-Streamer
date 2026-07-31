@@ -223,6 +223,17 @@ body {
 
 
 /* ── Settings Panel Popup Modal (Gear Icon) ────────────────────────────────── */
+.vjs-settings-button {
+  cursor: pointer;
+}
+.vjs-settings-button .vjs-icon-placeholder:before {
+  content: "⚙" !important;
+  font-family: Arial, sans-serif, system-ui !important;
+  font-size: 1.35em !important;
+  line-height: 2.1 !important;
+  color: #ffffff;
+}
+
 .settings-panel {
   position: absolute; bottom: 3.6em; right: 12px;
   width: 290px; max-height: 80%; overflow-y: auto;

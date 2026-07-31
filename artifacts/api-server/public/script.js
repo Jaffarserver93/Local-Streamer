@@ -122,17 +122,29 @@ function initPlayer() {
     player.on("error", () => {
       const err = player.error();
       const src = player.currentSrc() || "";
+
       if (src.includes("/api/hls/") && activeFilename) {
         console.warn("HLS error, falling back to direct stream", err);
         try { player.error(null); } catch {}
         fallbackDirectPlay(activeFilename);
         return;
       }
+
+      // If direct stream failed due to unsupported codec/format (code 3 or 4), auto-start HLS
+      if ((err?.code === 3 || err?.code === 4 || err?.code === 2) && activeFilename) {
+        showToast("⚡ Converting video for smooth mobile playback...");
+        try { player.error(null); } catch {}
+        fetch(`/api/hls/start/${encodeURIComponent(activeFilename)}?videoDir=${encodeURIComponent(currentVideoDir)}`, {
+          method: "POST"
+        }).catch(() => {});
+        return;
+      }
+
       const msgs = {
         1: "Playback aborted.",
         2: "Network error — check your connection.",
-        3: "Video cannot be decoded (unsupported format or corrupt file).",
-        4: "Video format not supported by this browser (try MP4 or WebM).",
+        3: "Video format requires conversion — starting HLS...",
+        4: "Video format requires conversion — starting HLS...",
       };
       const text = (err && msgs[err.code]) || "Unknown playback error.";
       setNowPlaying("⚠ " + text);
@@ -1106,11 +1118,18 @@ socket.on("hls-error", ({ filename, error }) => {
 function fallbackDirectPlay(filename) {
   if (!player) return;
   const ext  = filename.split(".").pop().toLowerCase();
-  const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm" };
-  // Clear any error state from a previous failed load before setting new src
+  const mime = { mp4: "video/mp4", mkv: "video/x-matroska", webm: "video/webm", avi: "video/x-msvideo", mov: "video/quicktime" };
+
   try { player.error(null); } catch {}
   player.src({ src: `/video/${encodeURIComponent(filename)}`, type: mime[ext] || "video/mp4" });
   player.play().catch(() => {});
+
+  // For non-web formats (mkv, avi, flv, ts, wmv), auto-start HLS conversion in background
+  if (["mkv", "avi", "flv", "ts", "wmv", "3gp"].includes(ext)) {
+    fetch(`/api/hls/start/${encodeURIComponent(filename)}?videoDir=${encodeURIComponent(currentVideoDir)}`, {
+      method: "POST"
+    }).catch(() => {});
+  }
 }
 
 function updateHlsCardState(filename, status, count, transcodingOrError, error) {
