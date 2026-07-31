@@ -159,20 +159,33 @@ const SVG_PAUSE = `<svg viewBox="0 0 24 24" fill="white" width="52" height="52">
 function initTapOverlay() {
   const tapPlayPause = document.getElementById("tapPlayPause");
 
-  // Left zone — single click seeks −5 s
+  // Left zone — single click seeks −5 s (fullscreen only)
   document.getElementById("tapZoneLeft").addEventListener("click", (e) => {
     if (!activeFilename) return;
+    if (!player.isFullscreen()) return;   // only in fullscreen
     e.preventDefault();
     e.stopPropagation();
     seek(-SEEK_S, false);
   });
 
-  // Right zone — single click seeks +5 s
+  // Right zone — single click seeks +5 s (fullscreen only)
   document.getElementById("tapZoneRight").addEventListener("click", (e) => {
     if (!activeFilename) return;
+    if (!player.isFullscreen()) return;   // only in fullscreen
     e.preventDefault();
     e.stopPropagation();
     seek(SEEK_S, true);
+  });
+
+  // ── Drag / scrub detection ─────────────────────────────────────────────────
+  // Track where the pointer went down so we can tell a real click (no/tiny
+  // movement) from a progress-bar scrub (large movement).  If the user dragged
+  // more than 8 px in either axis we skip the play/pause animation.
+  let _tapDownX = null;
+  let _tapDownY = null;
+  player.el().addEventListener("pointerdown", (e) => {
+    _tapDownX = e.clientX;
+    _tapDownY = e.clientY;
   });
 
   // Center zone — pointer-events:none so Video.js handles play/pause;
@@ -181,6 +194,15 @@ function initTapOverlay() {
     if (!activeFilename) return;
     if (e.target.closest(".vjs-control-bar")) return;
     if (e.target.closest("#tapZoneLeft") || e.target.closest("#tapZoneRight")) return;
+
+    // Skip animation if this click ended a scrub drag
+    if (_tapDownX !== null) {
+      const moved = Math.abs(e.clientX - _tapDownX) > 8 ||
+                    Math.abs(e.clientY - _tapDownY) > 8;
+      _tapDownX = _tapDownY = null;
+      if (moved) return;
+    }
+
     // Show the state the video is BECOMING (current state flips after this event)
     tapPlayPause.innerHTML = player.paused() ? SVG_PLAY : SVG_PAUSE;
     animateTap("tapIconCenter");

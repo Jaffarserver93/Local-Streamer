@@ -214,7 +214,10 @@ body {
 
 /* ── Netflix-style tap overlay ───────────────────────────────────────────────── */
 .tap-overlay {
-  position: absolute; inset: 0;
+  position: absolute; top: 0; left: 0; right: 0;
+  /* Stop above the Video.js control bar (~3em) so clicks there reach the
+     progress slider and buttons directly — not the seek zones.           */
+  bottom: 3em;
   display: flex; z-index: 20; pointer-events: none;
 }
 /* Left/right zones intercept clicks; center lets clicks through to Video.js */
