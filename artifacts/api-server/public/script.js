@@ -119,9 +119,29 @@ function initPlayer() {
       }).catch(() => { pendingHlsSeek = null; });
     });
 
+function logClientError(message, extra = {}) {
+  try {
+    const err = typeof player !== "undefined" && player ? player.error() : null;
+    fetch("/api/client-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        level: extra.level || "error",
+        message: message,
+        filename: typeof activeFilename !== "undefined" ? activeFilename : "",
+        code: err ? err.code : extra.code || null,
+        src: typeof player !== "undefined" && player ? player.currentSrc() : "",
+        ...extra
+      })
+    }).catch(() => {});
+  } catch {}
+}
+
     player.on("error", () => {
       const err = player.error();
       const src = player.currentSrc() || "";
+
+      logClientError("Player playback error", { code: err?.code, errorMessage: err?.message });
 
       if (src.includes("/api/hls/") && activeFilename) {
         console.warn("HLS error, falling back to direct stream", err);

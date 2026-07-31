@@ -62260,6 +62260,17 @@ router3.post("/api/faststart/:filename", (req, res) => {
     }
   });
 });
+router3.post("/api/client-log", (req, res) => {
+  const body = req.body || {};
+  const level = String(body["level"] || "error");
+  const message = String(body["message"] || "Client Log Event");
+  const filename = String(body["filename"] || "");
+  const code = body["code"];
+  const src = String(body["src"] || "");
+  const userAgent = String(req.headers["user-agent"] || "");
+  console.log(`[CLIENT-LOG] [${level.toUpperCase()}] ${message} | File: "${filename}" | Code: ${code} | Src: ${src} | UA: ${userAgent}`);
+  res.json({ ok: true });
+});
 router3.get("/video/:filename", (req, res) => {
   const safeName = path.basename(String(req.params["filename"] || ""));
   const videoPath = path.join(currentVideoDir, safeName);

@@ -319,6 +319,24 @@ router.post("/api/faststart/:filename", (req: Request, res: Response) => {
   });
 });
 
+// ── POST /api/client-log ───────────────────────────────────────────────────────
+/**
+ * Log client-side errors (Video.js failures, mobile playback errors, network issues)
+ * to server logs for diagnostics.
+ */
+router.post("/api/client-log", (req: Request, res: Response) => {
+  const body = (req.body as Record<string, unknown>) || {};
+  const level = String(body["level"] || "error");
+  const message = String(body["message"] || "Client Log Event");
+  const filename = String(body["filename"] || "");
+  const code = body["code"];
+  const src = String(body["src"] || "");
+  const userAgent = String(req.headers["user-agent"] || "");
+
+  console.log(`[CLIENT-LOG] [${level.toUpperCase()}] ${message} | File: "${filename}" | Code: ${code} | Src: ${src} | UA: ${userAgent}`);
+  res.json({ ok: true });
+});
+
 // ── GET /video/:filename ───────────────────────────────────────────────────────
 /**
  * HTTP 206 Range streaming.
