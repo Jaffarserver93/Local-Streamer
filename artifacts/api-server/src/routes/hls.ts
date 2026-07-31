@@ -176,15 +176,12 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
 
   const videoArgs: string[] = needsTranscode
     ? [
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-        // Force a keyframe at every segment boundary so seeking always lands immediately
-        "-force_key_frames", `expr:gte(t,n_forced*${HLS_SEGMENT_DURATION})`,
-        "-vf", "scale=min(1920\\,iw):min(1080\\,ih):force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "24",
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-c:a", "aac", "-b:a", "128k",
       ]
     : [
         "-c", "copy",
-        // stream-copy mode still benefits from forcing keyframes at segment boundaries
       ];
 
   const inputArgs: string[] = startAt > 0
@@ -205,6 +202,11 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
   ]);
 
   job.proc = proc;
+
+  let stderrBuf = "";
+  proc.stderr?.on("data", (d: Buffer) => {
+    stderrBuf += d.toString();
+  });
 
   // Poll every 500 ms for new .ts files
   const watcher = setInterval(() => {
@@ -239,8 +241,10 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
       }
       emitTo(job.socketId, "hls-segment", { filename, count: n, transcoding: false, startAt });
     } else {
+      const errDetail = stderrBuf.trim().split("\n").pop() || `exit code ${code}`;
+      console.error(`[HLS Error] FFmpeg failed for "${filename}" (exit ${code}): ${errDetail}`);
       job.status = "error";
-      job.error  = `ffmpeg exited ${code}`;
+      job.error  = `ffmpeg exited ${code}: ${errDetail}`;
       emitTo(job.socketId, "hls-error", { filename, error: job.error });
       jobs.delete(s);
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}

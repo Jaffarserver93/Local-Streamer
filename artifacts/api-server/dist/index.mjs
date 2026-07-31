@@ -62444,12 +62444,9 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     "-preset",
     "ultrafast",
     "-crf",
-    "23",
-    // Force a keyframe at every segment boundary so seeking always lands immediately
-    "-force_key_frames",
-    `expr:gte(t,n_forced*${HLS_SEGMENT_DURATION})`,
+    "24",
     "-vf",
-    "scale=min(1920\\,iw):min(1080\\,ih):force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    "scale=trunc(iw/2)*2:trunc(ih/2)*2",
     "-c:a",
     "aac",
     "-b:a",
@@ -62457,7 +62454,6 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
   ] : [
     "-c",
     "copy"
-    // stream-copy mode still benefits from forcing keyframes at segment boundaries
   ];
   const inputArgs = startAt > 0 ? ["-ss", String(startAt), "-i", videoPath] : ["-i", videoPath];
   const proc = spawn2("ffmpeg", [
@@ -62479,6 +62475,10 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     manifestPath
   ]);
   job.proc = proc;
+  let stderrBuf = "";
+  proc.stderr?.on("data", (d) => {
+    stderrBuf += d.toString();
+  });
   const watcher = setInterval(() => {
     const n = countSegments(dir);
     if (n > job.segments) {
@@ -62504,8 +62504,10 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
       }
       emitTo(job.socketId, "hls-segment", { filename, count: n, transcoding: false, startAt });
     } else {
+      const errDetail = stderrBuf.trim().split("\n").pop() || `exit code ${code}`;
+      console.error(`[HLS Error] FFmpeg failed for "${filename}" (exit ${code}): ${errDetail}`);
       job.status = "error";
-      job.error = `ffmpeg exited ${code}`;
+      job.error = `ffmpeg exited ${code}: ${errDetail}`;
       emitTo(job.socketId, "hls-error", { filename, error: job.error });
       jobs.delete(s);
       try {
