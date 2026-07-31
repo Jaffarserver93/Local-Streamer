@@ -39,7 +39,7 @@ function initPlayer() {
       children: [
         "playToggle", "skipBackward", "skipForward",
         "volumePanel", "currentTimeDisplay", "timeDivider",
-        "durationDisplay", "progressControl", "fullscreenToggle",
+        "durationDisplay", "progressControl", "subsCapsButton", "fullscreenToggle",
       ],
     },
     inactivityTimeout: 3000,
@@ -51,6 +51,20 @@ function initPlayer() {
   player.ready(() => {
     initTapOverlay();
     initKeyboardSeek();
+    initSubtitleLoader();
+
+    // ── Auto-save playback history for Continue Watching ───────────────────────
+    let _lastSaveTime = 0;
+    player.on("timeupdate", () => {
+      if (!activeFilename) return;
+      const now = Date.now();
+      if (now - _lastSaveTime > 2000) {
+        _lastSaveTime = now;
+        saveHistory(activeFilename, player.currentTime(), player.duration());
+        // Update card progress bar in library
+        updateCardProgress(activeFilename, player.currentTime(), player.duration());
+      }
+    });
 
     // ── YouTube-like seeking: restart HLS from wherever the user scrubs ───────
     player.on("seeked", () => {
@@ -180,16 +194,23 @@ function initTapOverlay() {
     seek(SEEK_S, true);
   });
 
-  // ── Drag / scrub detection ─────────────────────────────────────────────────
-  // Track where the pointer went down so we can tell a real click (no/tiny
-  // movement) from a progress-bar scrub (large movement).  If the user dragged
-  // more than 8 px in either axis we skip the play/pause animation.
+  // ── Drag / scrub detection & 2x Speed Hold ─────────────────────────────────
   let _tapDownX = null;
   let _tapDownY = null;
   player.el().addEventListener("pointerdown", (e) => {
+    if (e.target.closest(".vjs-control-bar")) return;
     _tapDownX = e.clientX;
     _tapDownY = e.clientY;
+
+    clearTimeout(_hold2xTimer);
+    _hold2xTimer = setTimeout(() => {
+      start2xSpeed();
+    }, 400);
   });
+
+  player.el().addEventListener("pointerup", () => stop2xSpeed());
+  player.el().addEventListener("pointerleave", () => stop2xSpeed());
+  player.el().addEventListener("pointercancel", () => stop2xSpeed());
 
   // Center zone — pointer-events:none so Video.js handles play/pause;
   // we listen on the player element to catch those clicks and show the icon.
@@ -198,7 +219,9 @@ function initTapOverlay() {
     if (e.target.closest(".vjs-control-bar")) return;
     if (e.target.closest("#tapZoneLeft") || e.target.closest("#tapZoneRight")) return;
 
-    // Skip animation if this click ended a scrub drag
+    // Skip animation if 2x speed was triggered or click ended a drag
+    if (_is2xActive) { stop2xSpeed(); return; }
+
     if (_tapDownX !== null) {
       const moved = Math.abs(e.clientX - _tapDownX) > 8 ||
                     Math.abs(e.clientY - _tapDownY) > 8;
@@ -296,6 +319,158 @@ function renderLocalFiles(files) {
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   §1.5  Continue Watching History, Subtitles & 2x Speed
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const HISTORY_KEY = "localstream_history";
+
+function getHistoryMap() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function saveHistory(filename, currentTime, duration) {
+  if (!filename || !duration || isNaN(duration)) return;
+  const history = getHistoryMap();
+  if (currentTime / duration > 0.95 || duration - currentTime < 10) {
+    delete history[filename];
+  } else if (currentTime > 5) {
+    history[filename] = { time: Math.floor(currentTime), duration: Math.floor(duration), ts: Date.now() };
+  }
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function getSavedTime(filename) {
+  const history = getHistoryMap();
+  return history[filename]?.time || 0;
+}
+
+function clearSavedTime(filename) {
+  const history = getHistoryMap();
+  delete history[filename];
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function formatTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+function updateCardProgress(filename, currentTime, duration) {
+  const card = videoList?.querySelector(`[data-filename="${CSS.escape(filename)}"]`);
+  if (!card || !duration) return;
+  let bar = card.querySelector(".card-progress-bar");
+  let fill = card.querySelector(".card-progress-fill");
+  let timeLabel = card.querySelector(".card-resume-time");
+  const pct = Math.min(100, Math.max(0, (currentTime / duration) * 100));
+  if (pct > 1) {
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.className = "card-progress-bar";
+      fill = document.createElement("div");
+      fill.className = "card-progress-fill";
+      bar.appendChild(fill);
+      card.appendChild(bar);
+    }
+    if (fill) fill.style.width = `${pct}%`;
+    if (!timeLabel) {
+      timeLabel = document.createElement("div");
+      timeLabel.className = "card-resume-time";
+      card.appendChild(timeLabel);
+    }
+    if (timeLabel) timeLabel.textContent = `Resume from ${formatTime(currentTime)}`;
+  }
+}
+
+function showResumeToast(savedTime, filename) {
+  const toast = document.getElementById("resumeToast");
+  const text = document.getElementById("resumeText");
+  const btn = document.getElementById("startOverBtn");
+  if (!toast || !text || !btn) return;
+
+  text.textContent = `Resumed from ${formatTime(savedTime)}`;
+  toast.hidden = false;
+
+  btn.onclick = () => {
+    if (player) player.currentTime(0);
+    clearSavedTime(filename);
+    toast.hidden = true;
+    showToast("Restarted from beginning");
+  };
+
+  setTimeout(() => { if (toast) toast.hidden = true; }, 6000);
+}
+
+/* ── Subtitle Loader ───────────────────────────────────────────────────────── */
+function srtToVtt(srtText) {
+  let vtt = "WEBVTT\n\n" + srtText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  vtt = vtt.replace(/(\d\d:\d\d:\d\d),(\d\d\d)/g, "$1.$2");
+  return vtt;
+}
+
+function initSubtitleLoader() {
+  const subInput = document.getElementById("subInput");
+  if (!subInput) return;
+  subInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file || !player) return;
+    subInput.value = "";
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      let content = event.target.result;
+      if (file.name.toLowerCase().endsWith(".srt")) {
+        content = srtToVtt(content);
+      }
+      const blob = new Blob([content], { type: "text/vtt" });
+      const url = URL.createObjectURL(blob);
+
+      const tracks = player.remoteTextTracks();
+      if (tracks) {
+        for (let i = tracks.length - 1; i >= 0; i--) {
+          player.removeRemoteTextTrack(tracks[i]);
+        }
+      }
+
+      const track = player.addRemoteTextTrack({
+        kind: "subtitles",
+        src: url,
+        srclang: "en",
+        label: file.name.replace(/\.[^.]+$/, ""),
+        default: true
+      }, true);
+
+      if (track && track.track) track.track.mode = "showing";
+      showToast(`💬 Subtitles loaded: ${file.name}`);
+    };
+    reader.readAsText(file);
+  });
+}
+
+/* ── 2x Speed Hold Gesture ─────────────────────────────────────────────────── */
+let _hold2xTimer = null;
+let _is2xActive = false;
+
+function start2xSpeed() {
+  if (_is2xActive || !player) return;
+  _is2xActive = true;
+  player.playbackRate(2.0);
+  const badge = document.getElementById("speedBadge");
+  if (badge) badge.hidden = false;
+}
+
+function stop2xSpeed() {
+  clearTimeout(_hold2xTimer);
+  _hold2xTimer = null;
+  if (!_is2xActive) return;
+  _is2xActive = false;
+  if (player) player.playbackRate(1.0);
+  const badge = document.getElementById("speedBadge");
+  if (badge) badge.hidden = true;
+}
+
 function makeCard(filename, isLocal, _index, needsFaststart) {
   const ext      = filename.split(".").pop().toLowerCase();
   const baseName = filename.replace(/\.[^.]+$/, "");
@@ -308,6 +483,10 @@ function makeCard(filename, isLocal, _index, needsFaststart) {
   li.dataset.filename = filename;
   if (needsFaststart) li.dataset.needsFaststart = "1";
 
+  const saved = getHistoryMap()[filename];
+  const hasHistory = saved && saved.time > 5 && saved.duration > 0;
+  const pct = hasHistory ? Math.min(100, Math.max(0, (saved.time / saved.duration) * 100)) : 0;
+
   li.innerHTML = `
     <div class="video-card-top">
       <span class="video-card-icon">${icons[ext] || "🎬"}</span>
@@ -316,6 +495,9 @@ function makeCard(filename, isLocal, _index, needsFaststart) {
         <div class="video-card-ext">${esc(ext.toUpperCase())}</div>
       </div>
     </div>
+    ${hasHistory ? `
+    <div class="card-progress-bar"><div class="card-progress-fill" style="width:${pct}%"></div></div>
+    <div class="card-resume-time">Resume from ${formatTime(saved.time)}</div>` : ""}
     ${needsFaststart ? `
     <div class="faststart-row">
       <span class="faststart-warn">⚠ Will buffer</span>
@@ -644,6 +826,17 @@ async function playViaServer(filename) {
   hidePlaceholder();
   setNowPlaying(filename);
   highlightCard(filename);
+
+  // Auto-resume from saved playback position if available
+  const savedTime = getSavedTime(filename);
+  if (savedTime > 5) {
+    player.one("loadedmetadata", () => {
+      if (activeFilename === filename && (player.currentTime() || 0) < 1) {
+        player.currentTime(savedTime);
+        showResumeToast(savedTime, filename);
+      }
+    });
+  }
 
   // Step 1 — always start direct streaming immediately so the video plays
   // right away with no waiting. This also shows the timer correctly.

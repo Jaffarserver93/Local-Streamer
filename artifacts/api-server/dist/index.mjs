@@ -62195,7 +62195,7 @@ router3.post("/api/upload", (req, res) => {
   });
 });
 router3.post("/api/faststart/:filename", (req, res) => {
-  const safeName = path.basename(req.params["filename"] ?? "");
+  const safeName = path.basename(String(req.params["filename"] || ""));
   const videoPath = path.join(currentVideoDir, safeName);
   const ext = path.extname(safeName).toLowerCase();
   if (!fs.existsSync(videoPath)) {
@@ -62261,7 +62261,7 @@ router3.post("/api/faststart/:filename", (req, res) => {
   });
 });
 router3.get("/video/:filename", (req, res) => {
-  const safeName = path.basename(req.params["filename"] ?? "");
+  const safeName = path.basename(String(req.params["filename"] || ""));
   const videoPath = path.join(currentVideoDir, safeName);
   const ext = path.extname(safeName).toLowerCase();
   if (!SUPPORTED_EXTS.has(ext)) {
@@ -62521,9 +62521,9 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
 }
 var router4 = (0, import_express4.Router)();
 router4.post("/api/hls/start/:filename", async (req, res) => {
-  const filename = path2.basename(req.params["filename"] ?? "");
-  const videoDir = req.query["videoDir"] ?? "";
-  const socketId = req.query["socketId"] ?? "";
+  const filename = path2.basename(String(req.params["filename"] || ""));
+  const videoDir = String(req.query["videoDir"] || "");
+  const socketId = String(req.query["socketId"] || "");
   if (!filename || !videoDir) {
     res.status(400).json({ error: "filename and videoDir are required" });
     return;
@@ -62571,9 +62571,9 @@ router4.post("/api/hls/start/:filename", async (req, res) => {
   });
 });
 router4.post("/api/hls/seek/:filename", async (req, res) => {
-  const filename = path2.basename(req.params["filename"] ?? "");
-  const videoDir = req.query["videoDir"] ?? "";
-  const socketId = req.query["socketId"] ?? "";
+  const filename = path2.basename(String(req.params["filename"] || ""));
+  const videoDir = String(req.query["videoDir"] || "");
+  const socketId = String(req.query["socketId"] || "");
   const position = Number(req.body?.["position"]) || 0;
   if (!filename || !videoDir) {
     res.status(400).json({ error: "filename and videoDir are required" });
@@ -62627,7 +62627,7 @@ router4.post("/api/hls/clear", (_req, res) => {
   }
 });
 router4.get("/api/hls/:filename/index.m3u8", (req, res) => {
-  const filename = path2.basename(req.params["filename"] ?? "");
+  const filename = path2.basename(String(req.params["filename"] || ""));
   const dir = hlsDir(filename);
   const manifestPath = path2.join(dir, "index.m3u8");
   if (!fs2.existsSync(manifestPath)) {
@@ -62644,8 +62644,8 @@ router4.get("/api/hls/:filename/index.m3u8", (req, res) => {
   });
 });
 router4.get("/api/hls/:filename/:segment", (req, res) => {
-  const filename = path2.basename(req.params["filename"] ?? "");
-  const segment = path2.basename(req.params["segment"] ?? "");
+  const filename = path2.basename(String(req.params["filename"] || ""));
+  const segment = path2.basename(String(req.params["segment"] || ""));
   const segPath = path2.join(hlsDir(filename), segment);
   if (!fs2.existsSync(segPath)) {
     res.status(404).end();

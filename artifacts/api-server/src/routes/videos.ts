@@ -258,7 +258,7 @@ router.post("/api/upload", (req: Request, res: Response) => {
  *   3. Broadcast faststart-done or faststart-error via Socket.io
  */
 router.post("/api/faststart/:filename", (req: Request, res: Response) => {
-  const safeName  = path.basename(req.params["filename"] ?? "");
+  const safeName  = path.basename(String(req.params["filename"] || ""));
   const videoPath = path.join(currentVideoDir, safeName);
   const ext       = path.extname(safeName).toLowerCase();
 
@@ -326,7 +326,7 @@ router.post("/api/faststart/:filename", (req: Request, res: Response) => {
  * and Chromecast (Cast SDK only uses Range requests).
  */
 router.get("/video/:filename", (req: Request, res: Response) => {
-  const safeName  = path.basename(req.params["filename"] ?? "");
+  const safeName  = path.basename(String(req.params["filename"] || ""));
   const videoPath = path.join(currentVideoDir, safeName);
   const ext       = path.extname(safeName).toLowerCase();
 

@@ -84,6 +84,15 @@
 
         </div>
 
+        <!-- 2x speed badge overlay -->
+        <div id="speedBadge" class="speed-badge" hidden>2X SPEED ▶▶</div>
+
+        <!-- Auto-resume notification toast -->
+        <div id="resumeToast" class="resume-toast" hidden>
+          <span id="resumeText" class="resume-text"></span>
+          <button id="startOverBtn" class="resume-btn">Start Over</button>
+        </div>
+
         <div id="playerPlaceholder" class="player-placeholder">
           <div class="placeholder-icon">&#9654;</div>
           <p>Pick a video from the library below</p>
@@ -93,6 +102,10 @@
       <div id="nowPlaying" class="now-playing" hidden>
         <span class="now-playing-label">NOW PLAYING</span>
         <span id="nowPlayingName" class="now-playing-name"></span>
+        <label class="sub-upload-label" title="Load .srt or .vtt subtitles">
+          <input type="file" id="subInput" accept=".srt,.vtt" hidden>
+          <span>💬 Subtitles</span>
+        </label>
       </div>
     </section>
 

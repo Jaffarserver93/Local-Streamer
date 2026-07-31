@@ -269,9 +269,9 @@ const router = Router();
 
 // ── POST /api/hls/start/:filename ──────────────────────────────────────────────
 router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
-  const filename = path.basename(req.params["filename"] ?? "");
-  const videoDir = (req.query["videoDir"] as string | undefined) ?? "";
-  const socketId = (req.query["socketId"] as string | undefined) ?? "";
+  const filename = path.basename(String(req.params["filename"] || ""));
+  const videoDir = String(req.query["videoDir"] || "");
+  const socketId = String(req.query["socketId"] || "");
 
   if (!filename || !videoDir) {
     res.status(400).json({ error: "filename and videoDir are required" });
@@ -344,9 +344,9 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
  * { status: "ready" } — client should just seek within existing HLS.
  */
 router.post("/api/hls/seek/:filename", async (req: Request, res: Response) => {
-  const filename = path.basename(req.params["filename"] ?? "");
-  const videoDir = (req.query["videoDir"] as string | undefined) ?? "";
-  const socketId = (req.query["socketId"] as string | undefined) ?? "";
+  const filename = path.basename(String(req.params["filename"] || ""));
+  const videoDir = String(req.query["videoDir"] || "");
+  const socketId = String(req.query["socketId"] || "");
   const position = Number((req.body as Record<string, unknown>)?.["position"]) || 0;
 
   if (!filename || !videoDir) {
@@ -416,7 +416,7 @@ router.post("/api/hls/clear", (_req: Request, res: Response) => {
 
 // ── GET /api/hls/:filename/index.m3u8 ─────────────────────────────────────────
 router.get("/api/hls/:filename/index.m3u8", (req: Request, res: Response) => {
-  const filename     = path.basename(req.params["filename"] ?? "");
+  const filename     = path.basename(String(req.params["filename"] || ""));
   const dir          = hlsDir(filename);
   const manifestPath = path.join(dir, "index.m3u8");
 
@@ -435,8 +435,8 @@ router.get("/api/hls/:filename/index.m3u8", (req: Request, res: Response) => {
 
 // ── GET /api/hls/:filename/:segment ───────────────────────────────────────────
 router.get("/api/hls/:filename/:segment", (req: Request, res: Response) => {
-  const filename = path.basename(req.params["filename"] ?? "");
-  const segment  = path.basename(req.params["segment"]  ?? "");
+  const filename = path.basename(String(req.params["filename"] || ""));
+  const segment  = path.basename(String(req.params["segment"] || ""));
   const segPath  = path.join(hlsDir(filename), segment);
 
   if (!fs.existsSync(segPath)) {
