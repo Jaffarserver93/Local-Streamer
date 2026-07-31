@@ -345,16 +345,34 @@ body {
   filter: drop-shadow(0 2px 10px rgba(0,0,0,.65));
 }
 
+/* ── Hide default Video.js big play button (prevent duplicate play icons) ────── */
+.video-js .vjs-big-play-button { display: none !important; }
+
 /* ── Placeholder ─────────────────────────────────────────────────────────────── */
 .player-placeholder {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: .65rem; background: rgba(0,0,0,.82); color: var(--muted);
-  pointer-events: none; z-index: 5; transition: opacity var(--ease);
+  gap: 1rem; background: rgba(0, 0, 0, 0.92); color: rgba(255, 255, 255, 0.85);
+  pointer-events: none; z-index: 15; transition: opacity var(--ease);
 }
-.player-placeholder.hidden { opacity: 0; }
-.placeholder-icon { font-size: 2.6rem; opacity: .3; }
-.player-placeholder p { font-size: .82rem; text-align: center; max-width: 200px; }
+.player-placeholder.hidden { opacity: 0; pointer-events: none; visibility: hidden; }
+.placeholder-icon {
+  width: 68px; height: 68px; border-radius: 50%;
+  background: rgba(255, 0, 0, 0.2); border: 2px solid var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 25px rgba(255, 0, 0, 0.4), inset 0 0 15px rgba(255, 0, 0, 0.2);
+  color: #ffffff; font-size: 1.6rem; padding-left: 4px;
+  animation: pulsePlayIcon 2s infinite ease-in-out;
+}
+@keyframes pulsePlayIcon {
+  0%   { transform: scale(1); box-shadow: 0 0 20px rgba(255,0,0,0.3); }
+  50%  { transform: scale(1.06); box-shadow: 0 0 35px rgba(255,0,0,0.6); }
+  100% { transform: scale(1); box-shadow: 0 0 20px rgba(255,0,0,0.3); }
+}
+.player-placeholder p {
+  font-size: .88rem; font-weight: 500; text-align: center; color: rgba(255, 255, 255, 0.85);
+  margin: 0; letter-spacing: .02em; max-width: 240px;
+}
 
 /* ── Speed Badge (Hold to 2x - YouTube Pill Style) ─────────────────────────── */
 .speed-badge {

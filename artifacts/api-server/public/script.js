@@ -47,6 +47,7 @@ videojs.registerComponent("SettingsButton", SettingsButton);
 function initPlayer() {
   player = videojs("videoPlayer", {
     controls: true,
+    bigPlayButton: false,
     preload: "auto",
     playsinline: true,
     techOrder: ["html5"],
