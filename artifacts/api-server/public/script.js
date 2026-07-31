@@ -194,22 +194,69 @@ function initTapOverlay() {
     player.el().appendChild(tapOverlay);
   }
 
-  const tapPlayPause = document.getElementById("tapPlayPause");
+  let _tapCount = 0;
+  let _tapTimer = null;
+  let _tapZone = null;
 
-  // Left zone — single click seeks −5 s (works in fullscreen and windowed mode)
-  document.getElementById("tapZoneLeft").addEventListener("click", (e) => {
+  function triggerPlayPause() {
+    if (!player) return;
+    const tapPlayPause = document.getElementById("tapPlayPause");
+    const willPlay = player.paused();
+
+    if (willPlay) {
+      player.play().catch(() => {});
+    } else {
+      player.pause();
+    }
+
+    if (tapPlayPause) {
+      tapPlayPause.innerHTML = willPlay ? SVG_PLAY : SVG_PAUSE;
+    }
+    animateTap("tapIconCenter");
+  }
+
+  function handleTap(zone, e) {
     if (!activeFilename) return;
-    e.preventDefault();
-    e.stopPropagation();
-    seek(-SEEK_S, false);
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (_is2xActive || _was2xJustActive) {
+      _was2xJustActive = false;
+      stop2xSpeed();
+      return;
+    }
+
+    _tapCount++;
+    _tapZone = zone;
+
+    clearTimeout(_tapTimer);
+    _tapTimer = setTimeout(() => {
+      if (_tapCount === 1) {
+        // Single tap = Play / Pause
+        triggerPlayPause();
+      } else if (_tapCount >= 2) {
+        // Double tap (twice) = Skip 5 seconds
+        if (_tapZone === "left") {
+          seek(-SEEK_S, false);
+        } else if (_tapZone === "right") {
+          seek(+SEEK_S, true);
+        }
+      }
+      _tapCount = 0;
+      _tapZone = null;
+    }, 240);
+  }
+
+  // Left zone — single tap = Play/Pause, double tap = -5s
+  document.getElementById("tapZoneLeft").addEventListener("click", (e) => {
+    handleTap("left", e);
   });
 
-  // Right zone — single click seeks +5 s (works in fullscreen and windowed mode)
+  // Right zone — single tap = Play/Pause, double tap = +5s
   document.getElementById("tapZoneRight").addEventListener("click", (e) => {
-    if (!activeFilename) return;
-    e.preventDefault();
-    e.stopPropagation();
-    seek(SEEK_S, true);
+    handleTap("right", e);
   });
 
   // ── Drag / scrub detection & 2x Speed Hold ─────────────────────────────────
@@ -230,13 +277,12 @@ function initTapOverlay() {
   player.el().addEventListener("pointerleave", () => stop2xSpeed());
   player.el().addEventListener("pointercancel", () => stop2xSpeed());
 
-  // Center zone — pointer-events:none so Video.js handles play/pause;
-  // we listen on the player element to catch those clicks and show the icon.
+  // Center zone / Player click handler
   player.el().addEventListener("click", (e) => {
     if (!activeFilename) return;
     if (e.target.closest(".vjs-control-bar")) return;
+    if (e.target.closest("#tapZoneLeft") || e.target.closest("#tapZoneRight")) return;
 
-    // Prevent click from toggling play/pause if releasing a 2x speed hold
     if (_is2xActive || _was2xJustActive) {
       _was2xJustActive = false;
       stop2xSpeed();
@@ -245,8 +291,6 @@ function initTapOverlay() {
       return;
     }
 
-    if (e.target.closest("#tapZoneLeft") || e.target.closest("#tapZoneRight")) return;
-
     if (_tapDownX !== null) {
       const moved = Math.abs(e.clientX - _tapDownX) > 8 ||
                     Math.abs(e.clientY - _tapDownY) > 8;
@@ -254,9 +298,7 @@ function initTapOverlay() {
       if (moved) return;
     }
 
-    // Show the state the video is BECOMING (current state flips after this event)
-    tapPlayPause.innerHTML = player.paused() ? SVG_PLAY : SVG_PAUSE;
-    animateTap("tapIconCenter");
+    handleTap("center", e);
   }, true);
 }
 
