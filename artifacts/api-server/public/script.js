@@ -401,24 +401,6 @@ function updateCardProgress(filename, currentTime, duration) {
   }
 }
 
-function showResumeToast(savedTime, filename) {
-  const toast = document.getElementById("resumeToast");
-  const text = document.getElementById("resumeText");
-  const btn = document.getElementById("startOverBtn");
-  if (!toast || !text || !btn) return;
-
-  text.textContent = `Resumed from ${formatTime(savedTime)}`;
-  toast.hidden = false;
-
-  btn.onclick = () => {
-    if (player) player.currentTime(0);
-    clearSavedTime(filename);
-    toast.hidden = true;
-    showToast("Restarted from beginning");
-  };
-
-  setTimeout(() => { if (toast) toast.hidden = true; }, 6000);
-}
 
 /* ── Subtitle Loader ───────────────────────────────────────────────────────── */
 function srtToVtt(srtText) {
@@ -958,7 +940,6 @@ async function playViaServer(filename) {
     player.one("loadedmetadata", () => {
       if (activeFilename === filename && (player.currentTime() || 0) < 1) {
         player.currentTime(savedTime);
-        showResumeToast(savedTime, filename);
       }
     });
   }
