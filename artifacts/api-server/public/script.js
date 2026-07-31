@@ -157,21 +157,24 @@ const SVG_PLAY  = `<svg viewBox="0 0 24 24" fill="white" width="52" height="52">
 const SVG_PAUSE = `<svg viewBox="0 0 24 24" fill="white" width="52" height="52"><rect x="4" y="3" width="5" height="18" rx="1"/><rect x="15" y="3" width="5" height="18" rx="1"/></svg>`;
 
 function initTapOverlay() {
+  const tapOverlay = document.getElementById("tapOverlay");
+  if (tapOverlay && player && player.el()) {
+    player.el().appendChild(tapOverlay);
+  }
+
   const tapPlayPause = document.getElementById("tapPlayPause");
 
-  // Left zone — single click seeks −5 s (fullscreen only)
+  // Left zone — single click seeks −5 s (works in fullscreen and windowed mode)
   document.getElementById("tapZoneLeft").addEventListener("click", (e) => {
     if (!activeFilename) return;
-    if (!player.isFullscreen()) return;   // only in fullscreen
     e.preventDefault();
     e.stopPropagation();
     seek(-SEEK_S, false);
   });
 
-  // Right zone — single click seeks +5 s (fullscreen only)
+  // Right zone — single click seeks +5 s (works in fullscreen and windowed mode)
   document.getElementById("tapZoneRight").addEventListener("click", (e) => {
     if (!activeFilename) return;
-    if (!player.isFullscreen()) return;   // only in fullscreen
     e.preventDefault();
     e.stopPropagation();
     seek(SEEK_S, true);

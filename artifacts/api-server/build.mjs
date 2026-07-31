@@ -24,11 +24,12 @@ async function buildAll() {
   console.log("✓ Copied socket.io.min.js to public/");
 
   await esbuild({
+    absWorkingDir: artifactDir,
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
     platform: "node",
     bundle: true,
     format: "esm",
-    outdir: distDir,
+    outdir: "dist",
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
