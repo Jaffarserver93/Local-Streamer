@@ -70,12 +70,35 @@ let io: IOServer | null = null;
 export function setHlsIO(ioInstance: IOServer): void { io = ioInstance; }
 
 /**
- * Whether this FFmpeg build requires compat mode (detected on first exit-8).
- * In compat mode we drop options that some stripped FFmpeg builds (e.g. Termux)
- * don't recognise: currently `-hls_start_number`.
- * Once set, all subsequent spawns skip the unsupported flags immediately.
+ * Whether this FFmpeg build requires compat mode.
+ * In compat mode we drop options that some FFmpeg builds don't recognise:
+ * currently `-hls_start_number` (absent in Termux's FFmpeg 8.x).
+ *
+ * Initialised by probeHlsStartNumber() at module load so the first HLS
+ * request never wastes an attempt on a doomed exit-8 spawn.
+ * Falls back to runtime detection via the exit-8 retry if the probe itself
+ * can't run (e.g. ffmpeg not yet installed).
  */
 let ffmpegCompatMode = false;
+
+/** Probe once at startup: check if this ffmpeg build supports -hls_start_number. */
+function probeHlsStartNumber(): void {
+  try {
+    const proc = spawn("ffmpeg", ["-hide_banner", "-help", "muxer=hls"]);
+    let out = "";
+    proc.stdout?.on("data", (d: Buffer) => { out += d.toString(); });
+    proc.stderr?.on("data", (d: Buffer) => { out += d.toString(); });
+    proc.on("close", () => {
+      if (out && !out.includes("hls_start_number")) {
+        ffmpegCompatMode = true;
+        console.log("[HLS] Startup probe: -hls_start_number not supported — compat mode enabled.");
+      }
+    });
+    proc.on("error", () => { /* ffmpeg not installed yet — runtime detection will handle it */ });
+  } catch { /* ignore */ }
+}
+
+probeHlsStartNumber();
 
 /** Emit only to a specific socket (the one that started the HLS job). */
 function emitTo(socketId: string, event: string, data: unknown): void {

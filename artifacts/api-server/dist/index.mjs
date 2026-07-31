@@ -62337,6 +62337,28 @@ function setHlsIO(ioInstance) {
   io3 = ioInstance;
 }
 var ffmpegCompatMode = false;
+function probeHlsStartNumber() {
+  try {
+    const proc = spawn2("ffmpeg", ["-hide_banner", "-help", "muxer=hls"]);
+    let out = "";
+    proc.stdout?.on("data", (d) => {
+      out += d.toString();
+    });
+    proc.stderr?.on("data", (d) => {
+      out += d.toString();
+    });
+    proc.on("close", () => {
+      if (out && !out.includes("hls_start_number")) {
+        ffmpegCompatMode = true;
+        console.log("[HLS] Startup probe: -hls_start_number not supported \u2014 compat mode enabled.");
+      }
+    });
+    proc.on("error", () => {
+    });
+  } catch {
+  }
+}
+probeHlsStartNumber();
 function emitTo(socketId, event, data) {
   if (!socketId) {
     io3?.emit(event, data);
