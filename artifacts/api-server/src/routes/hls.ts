@@ -55,6 +55,8 @@ interface HlsJob {
   transcoding: boolean;
   /** Seconds into the video where this job's segment-0 (or segment-N) starts. */
   startAt:     number;
+  /** Socket ID of the client that started this job — events go only to them. */
+  socketId:    string;
   /** ffmpeg process — needed so we can kill it on seek restarts. */
   proc?:       ChildProcess;
   /** Segment-count polling interval — cleared when job ends or is killed. */
@@ -67,7 +69,11 @@ const jobs = new Map<string, HlsJob>();
 let io: IOServer | null = null;
 export function setHlsIO(ioInstance: IOServer): void { io = ioInstance; }
 
-function broadcast(event: string, data: unknown): void { io?.emit(event, data); }
+/** Emit only to a specific socket (the one that started the HLS job). */
+function emitTo(socketId: string, event: string, data: unknown): void {
+  if (!socketId) { io?.emit(event, data); return; }
+  io?.to(socketId).emit(event, data);
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function stem(filename: string): string {
@@ -142,7 +148,7 @@ function killJob(s: string): void {
  * @param videoPath  - absolute path to the video file
  * @param startAt    - seconds into the video to begin encoding from (0 = beginning)
  */
-async function startJob(filename: string, videoPath: string, startAt = 0): Promise<HlsJob> {
+async function startJob(filename: string, videoPath: string, startAt = 0, socketId = ""): Promise<HlsJob> {
   const s = stem(filename);
 
   const dir          = hlsDir(filename);
@@ -159,6 +165,7 @@ async function startJob(filename: string, videoPath: string, startAt = 0): Promi
     segments:    0,
     transcoding: needsTranscode,
     startAt,
+    socketId,
   };
   jobs.set(s, job);
 
@@ -204,7 +211,7 @@ async function startJob(filename: string, videoPath: string, startAt = 0): Promi
     const n = countSegments(dir);
     if (n > job.segments) {
       job.segments = n;
-      broadcast("hls-segment", { filename, count: n, transcoding: job.transcoding, startAt });
+      emitTo(job.socketId, "hls-segment", { filename, count: n, transcoding: job.transcoding, startAt });
     }
   }, 500);
 
@@ -224,17 +231,17 @@ async function startJob(filename: string, videoPath: string, startAt = 0): Promi
       if (startAt === 0) {
         writeCacheVersion(dir);
         job.status = "ready";
-        broadcast("hls-ready", { filename, segments: n });
+        emitTo(job.socketId, "hls-ready", { filename, segments: n });
       } else {
         // Mark as a completed seek job so we stop polling but don't label full-cache
         job.status = "ready";
-        broadcast("hls-seek-ready", { filename, segments: n, startAt });
+        emitTo(job.socketId, "hls-seek-ready", { filename, segments: n, startAt });
       }
-      broadcast("hls-segment", { filename, count: n, transcoding: false, startAt });
+      emitTo(job.socketId, "hls-segment", { filename, count: n, transcoding: false, startAt });
     } else {
       job.status = "error";
       job.error  = `ffmpeg exited ${code}`;
-      broadcast("hls-error", { filename, error: job.error });
+      emitTo(job.socketId, "hls-error", { filename, error: job.error });
       jobs.delete(s);
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     }
@@ -249,7 +256,7 @@ async function startJob(filename: string, videoPath: string, startAt = 0): Promi
       : e.message;
     job.status = "error";
     job.error  = msg;
-    broadcast("hls-error", { filename, error: msg });
+    emitTo(job.socketId, "hls-error", { filename, error: msg });
     jobs.delete(s);
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   });
@@ -264,6 +271,7 @@ const router = Router();
 router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
   const filename = path.basename(req.params["filename"] ?? "");
   const videoDir = (req.query["videoDir"] as string | undefined) ?? "";
+  const socketId = (req.query["socketId"] as string | undefined) ?? "";
 
   if (!filename || !videoDir) {
     res.status(400).json({ error: "filename and videoDir are required" });
@@ -300,7 +308,7 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
     const content   = versionOk ? fs.readFileSync(manifestPath, "utf8") : "";
     if (versionOk && content.includes("#EXT-X-ENDLIST")) {
       const n = countSegments(dir);
-      const job: HlsJob = { status: "ready", hlsDir: dir, segments: n, transcoding: false, startAt: 0 };
+      const job: HlsJob = { status: "ready", hlsDir: dir, segments: n, transcoding: false, startAt: 0, socketId };
       jobs.set(s, job);
       res.json({ status: "ready", segments: n, transcoding: false, startAt: 0, hlsPath: `/api/hls/${encodeURIComponent(filename)}/index.m3u8` });
       return;
@@ -308,7 +316,7 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 
-  const job = await startJob(filename, videoPath, 0);
+  const job = await startJob(filename, videoPath, 0, socketId);
   res.json({
     status:      "generating",
     segments:    job.segments,
@@ -338,6 +346,7 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
 router.post("/api/hls/seek/:filename", async (req: Request, res: Response) => {
   const filename = path.basename(req.params["filename"] ?? "");
   const videoDir = (req.query["videoDir"] as string | undefined) ?? "";
+  const socketId = (req.query["socketId"] as string | undefined) ?? "";
   const position = Number((req.body as Record<string, unknown>)?.["position"]) || 0;
 
   if (!filename || !videoDir) {
@@ -382,7 +391,7 @@ router.post("/api/hls/seek/:filename", async (req: Request, res: Response) => {
     return;
   }
 
-  const job = await startJob(filename, videoPath, seekAt);
+  const job = await startJob(filename, videoPath, seekAt, socketId);
 
   res.json({
     status:      "started",

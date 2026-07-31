@@ -66,7 +66,7 @@ function initPlayer() {
       pendingHlsSeek = { filename: activeFilename, position };
 
       fetch(
-        `/api/hls/seek/${encodeURIComponent(activeFilename)}?videoDir=${encodeURIComponent(currentVideoDir)}`,
+        `/api/hls/seek/${encodeURIComponent(activeFilename)}?videoDir=${encodeURIComponent(currentVideoDir)}&socketId=${encodeURIComponent(socket.id)}`,
         {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
@@ -607,7 +607,7 @@ async function playViaServer(filename) {
     currentVideoDir = videoDir; // store for seek handler
 
     const hlsRes = await fetch(
-      `/api/hls/start/${encodeURIComponent(filename)}?videoDir=${encodeURIComponent(videoDir)}`,
+      `/api/hls/start/${encodeURIComponent(filename)}?videoDir=${encodeURIComponent(videoDir)}&socketId=${encodeURIComponent(socket.id)}`,
       { method: "POST" }
     );
     if (!hlsRes.ok) return;
