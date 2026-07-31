@@ -182,11 +182,50 @@ function initPlayer() {
       startSeekBroadcast();
     });
 
-    // Send one final accurate position on release, then stop
+    // Send one final accurate position on release, then stop.
+    // Also trigger a server-side HLS seek restart for YouTube-like instant seeking.
     player.on("seeked", () => {
       stopSeekBroadcast();
       if (applyingSync || !activeFilename) return;
-      postSync("/api/seek", { position: player.currentTime() || 0 });
+
+      const position = player.currentTime() || 0;
+      postSync("/api/seek", { position });
+
+      // ── YouTube-like seek: restart HLS from the new position ───────────────
+      // If we're on direct streaming (or a seek-based HLS that may not cover this
+      // position), ask the server to restart ffmpeg at the seek point.
+      // The first HLS segment is ready in ~1 s; hls-segment fires → we switch.
+      const src      = player.currentSrc() || "";
+      const onHls    = src.includes("/api/hls/");
+      const hlsFull  = hlsState.get(activeFilename) === "ready";
+
+      // If on a fully-ready full-file HLS cache, Video.js handles seeking natively — nothing to do.
+      if (onHls && hlsFull) return;
+
+      // Otherwise, request a seek-aware HLS restart.
+      if (!currentVideoDir) return;
+      pendingHlsSeek = { filename: activeFilename, position };
+
+      fetch(
+        `/api/hls/seek/${encodeURIComponent(activeFilename)}?videoDir=${encodeURIComponent(currentVideoDir)}`,
+        {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ position }),
+        }
+      ).then(r => r.json()).then(body => {
+        if (!activeFilename) return;
+        if (body.status === "ready") {
+          // Full cache already covers everything — switch and seek natively
+          pendingHlsSeek = null;
+          switchToHlsAt(activeFilename, position);
+        } else if (body.status === "generating") {
+          // Already within the cached region — switch now
+          pendingHlsSeek = null;
+          switchToHlsAt(activeFilename, position);
+        }
+        // status === "started": wait for hls-segment event (handled above)
+      }).catch(() => { pendingHlsSeek = null; });
     });
 
     player.on("error", () => {
@@ -637,7 +676,9 @@ function clearFolderError()   { folderError.hidden = true; folderError.textConte
    §9  Playback router
    ═══════════════════════════════════════════════════════════════════════════ */
 
-let activeFilename = null;
+let activeFilename  = null;
+/** Last known video directory — stored so the seeked handler can call /api/hls/seek without a round-trip. */
+let currentVideoDir = "";
 
 /**
  * Broadcast a play command to ALL connected clients (including yourself).
@@ -662,9 +703,12 @@ async function broadcastPlay(filename) {
 /** filename → "generating" | "ready" */
 const hlsState = new Map();
 
-/** How many segments must exist before we switch the live player to HLS.
- *  2 segments = ~8 s of buffered video — enough to start without stutter. */
-const HLS_SWITCH_THRESHOLD = 2;
+/**
+ * When the user seeks and we trigger a HLS seek-restart on the server,
+ * this holds the exact player position we want to restore once the first
+ * HLS segment is available.  null = no pending seek.
+ */
+let pendingHlsSeek = null;  // { filename, position }
 
 /** Switch the currently-playing video to HLS, preserving playback position. */
 function switchToHls(filename) {
@@ -680,6 +724,23 @@ function switchToHls(filename) {
 }
 
 /**
+ * Switch to HLS AND seek to a specific position.
+ * Used after a seek-triggered HLS restart so the player resumes exactly
+ * where the user scrubbed, not from the beginning of the new manifest.
+ */
+function switchToHlsAt(filename, position) {
+  if (!player || filename !== activeFilename) return;
+  const hlsPath = `/api/hls/${encodeURIComponent(filename)}/index.m3u8`;
+  try { player.error(null); } catch {}
+  player.src({ src: hlsPath, type: "application/x-mpegURL" });
+  player.one("loadedmetadata", () => {
+    player.currentTime(position);
+    player.play().catch(() => {});
+  });
+  player.play().catch(() => {});
+}
+
+/**
  * HLS socket events:
  *  - hls-segment: fires each time a new .ts segment lands on disk.
  *    Once we have HLS_SWITCH_THRESHOLD segments, switch the live player
@@ -689,19 +750,30 @@ function switchToHls(filename) {
 socket.on("hls-segment", ({ filename, count, transcoding }) => {
   hlsState.set(filename, "generating");
   updateHlsCardState(filename, "generating", count, transcoding);
-  // Never auto-switch to HLS while segments are still being generated.
-  // Direct streaming uses HTTP Range requests which seek instantly to any
-  // position without waiting for ffmpeg to encode that far first.
-  // Switching mid-play to a partially-built HLS causes the
-  // "buffer 1s / play 20ms" stutter whenever the user seeks ahead.
+
+  // If a seek-triggered HLS restart is pending AND we have at least 1 segment
+  // for the right file, the target position is now on disk → switch to HLS immediately.
+  if (
+    pendingHlsSeek &&
+    pendingHlsSeek.filename === filename &&
+    count >= 1
+  ) {
+    const { position } = pendingHlsSeek;
+    pendingHlsSeek = null;
+    switchToHlsAt(filename, position);
+  }
 });
 
 socket.on("hls-ready", ({ filename }) => {
   hlsState.set(filename, "ready");
   updateHlsCardState(filename, "ready");
-  // NOW switch: every segment is on disk, so seeking picks segment N and
-  // the local server serves it in milliseconds — YouTube-like performance.
+  // Full cache done — every segment is on disk, switch now for instant seeking.
   switchToHls(filename);
+});
+
+socket.on("hls-seek-ready", ({ filename }) => {
+  // Seek-job finished (startAt > 0). Clear any stale pending seek.
+  if (pendingHlsSeek?.filename === filename) pendingHlsSeek = null;
 });
 
 socket.on("hls-error", ({ filename, error }) => {
@@ -765,6 +837,7 @@ async function playViaServer(filename) {
     const dirRes   = await fetch("/api/video-dir");
     const videoDir = dirRes.ok ? ((await dirRes.json()).path ?? "") : "";
     if (!videoDir) return;
+    currentVideoDir = videoDir; // store for seek handler
 
     const hlsRes = await fetch(
       `/api/hls/start/${encodeURIComponent(filename)}?videoDir=${encodeURIComponent(videoDir)}`,
