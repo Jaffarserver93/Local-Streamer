@@ -11355,7 +11355,7 @@ var require_socket = __commonJS({
         debug("readyState updated from %s to %s", this._readyState, state);
         this._readyState = state;
       }
-      constructor(id, server, transport2, req, protocol) {
+      constructor(id, server, transport, req, protocol) {
         super();
         this._readyState = "opening";
         this.upgrading = false;
@@ -11378,7 +11378,7 @@ var require_socket = __commonJS({
         }
         this.pingTimeoutTimer = null;
         this.pingIntervalTimer = null;
-        this.setTransport(transport2);
+        this.setTransport(transport);
         this.onOpen();
       }
       /**
@@ -11490,24 +11490,24 @@ var require_socket = __commonJS({
        * @param {Transport} transport
        * @private
        */
-      setTransport(transport2) {
+      setTransport(transport) {
         const onError = this.onError.bind(this);
         const onReady = () => this.flush();
         const onPacket = this.onPacket.bind(this);
         const onDrain = this.onDrain.bind(this);
         const onClose = this.onClose.bind(this, "transport close");
-        this.transport = transport2;
+        this.transport = transport;
         this.transport.once("error", onError);
         this.transport.on("ready", onReady);
         this.transport.on("packet", onPacket);
         this.transport.on("drain", onDrain);
         this.transport.once("close", onClose);
         this.cleanupFn.push(function() {
-          transport2.removeListener("error", onError);
-          transport2.removeListener("ready", onReady);
-          transport2.removeListener("packet", onPacket);
-          transport2.removeListener("drain", onDrain);
-          transport2.removeListener("close", onClose);
+          transport.removeListener("error", onError);
+          transport.removeListener("ready", onReady);
+          transport.removeListener("packet", onPacket);
+          transport.removeListener("drain", onDrain);
+          transport.removeListener("close", onClose);
         });
       }
       /**
@@ -11533,22 +11533,22 @@ var require_socket = __commonJS({
        * @private
        */
       /* private */
-      _maybeUpgrade(transport2) {
-        debug('might upgrade socket transport from "%s" to "%s"', this.transport.name, transport2.name);
+      _maybeUpgrade(transport) {
+        debug('might upgrade socket transport from "%s" to "%s"', this.transport.name, transport.name);
         this.upgrading = true;
         const upgradeTimeoutTimer = (0, timers_1.setTimeout)(() => {
           debug("client did not complete upgrade - closing transport");
           cleanup();
-          if ("open" === transport2.readyState) {
-            transport2.close();
+          if ("open" === transport.readyState) {
+            transport.close();
           }
         }, this.server.opts.upgradeTimeout);
         let checkIntervalTimer;
         const onPacket = (packet) => {
           if ("ping" === packet.type && "probe" === packet.data) {
             debug("got probe ping packet, sending pong");
-            transport2.send([{ type: "pong", data: "probe" }]);
-            this.emit("upgrading", transport2);
+            transport.send([{ type: "pong", data: "probe" }]);
+            this.emit("upgrading", transport);
             clearInterval(checkIntervalTimer);
             checkIntervalTimer = setInterval(check, 100);
           } else if ("upgrade" === packet.type && this.readyState !== "closed") {
@@ -11557,17 +11557,17 @@ var require_socket = __commonJS({
             this.transport.discard();
             this.upgraded = true;
             this.clearTransport();
-            this.setTransport(transport2);
-            this.emit("upgrade", transport2);
+            this.setTransport(transport);
+            this.emit("upgrade", transport);
             this.flush();
             if (this.readyState === "closing") {
-              transport2.close(() => {
+              transport.close(() => {
                 this.onClose("forced close");
               });
             }
           } else {
             cleanup();
-            transport2.close();
+            transport.close();
           }
         };
         const check = () => {
@@ -11580,16 +11580,16 @@ var require_socket = __commonJS({
           this.upgrading = false;
           clearInterval(checkIntervalTimer);
           (0, timers_1.clearTimeout)(upgradeTimeoutTimer);
-          transport2.removeListener("packet", onPacket);
-          transport2.removeListener("close", onTransportClose);
-          transport2.removeListener("error", onError);
+          transport.removeListener("packet", onPacket);
+          transport.removeListener("close", onTransportClose);
+          transport.removeListener("error", onError);
           this.removeListener("close", onClose);
         };
         const onError = (err) => {
           debug("client did not complete upgrade - %s", err);
           cleanup();
-          transport2.close();
-          transport2 = null;
+          transport.close();
+          transport = null;
         };
         const onTransportClose = () => {
           onError("transport closed");
@@ -11597,9 +11597,9 @@ var require_socket = __commonJS({
         const onClose = () => {
           onError("socket closed");
         };
-        transport2.on("packet", onPacket);
-        transport2.once("close", onTransportClose);
-        transport2.once("error", onError);
+        transport.on("packet", onPacket);
+        transport.once("close", onTransportClose);
+        transport.once("error", onError);
         this.once("close", onClose);
       }
       /**
@@ -16073,10 +16073,10 @@ var require_server = __commonJS({
       /**
        * Returns a list of available transports for upgrade given a certain transport.
        */
-      upgrades(transport2) {
+      upgrades(transport) {
         if (!this.opts.allowUpgrades)
           return [];
-        return transports_1.default[transport2].upgradesTo || [];
+        return transports_1.default[transport].upgradesTo || [];
       }
       /**
        * Verifies a request.
@@ -16088,10 +16088,10 @@ var require_server = __commonJS({
        * @return whether the request is valid
        */
       verify(req, upgrade, fn) {
-        const transport2 = req._query.transport;
-        if (!~this.opts.transports.indexOf(transport2) || transport2 === "webtransport") {
-          debug('unknown transport "%s"', transport2);
-          return fn(Server2.errors.UNKNOWN_TRANSPORT, { transport: transport2 });
+        const transport = req._query.transport;
+        if (!~this.opts.transports.indexOf(transport) || transport === "webtransport") {
+          debug('unknown transport "%s"', transport);
+          return fn(Server2.errors.UNKNOWN_TRANSPORT, { transport });
         }
         const isOriginInvalid = checkInvalidHeaderChar(req.headers.origin);
         if (isOriginInvalid) {
@@ -16112,11 +16112,11 @@ var require_server = __commonJS({
             });
           }
           const previousTransport = this.clients[sid].transport.name;
-          if (!upgrade && previousTransport !== transport2) {
+          if (!upgrade && previousTransport !== transport) {
             debug("bad request: unexpected transport without upgrade");
             return fn(Server2.errors.BAD_REQUEST, {
               name: "TRANSPORT_MISMATCH",
-              transport: transport2,
+              transport,
               previousTransport
             });
           }
@@ -16126,7 +16126,7 @@ var require_server = __commonJS({
               method: req.method
             });
           }
-          if (transport2 === "websocket" && !upgrade) {
+          if (transport === "websocket" && !upgrade) {
             debug("invalid transport upgrade");
             return fn(Server2.errors.BAD_REQUEST, {
               name: "TRANSPORT_HANDSHAKE_ERROR"
@@ -16251,12 +16251,12 @@ var require_server = __commonJS({
         }
         debug('handshaking client "%s"', id);
         try {
-          var transport2 = this.createTransport(transportName, req);
+          var transport = this.createTransport(transportName, req);
           if ("polling" === transportName) {
-            transport2.maxHttpBufferSize = this.opts.maxHttpBufferSize;
-            transport2.httpCompression = this.opts.httpCompression;
+            transport.maxHttpBufferSize = this.opts.maxHttpBufferSize;
+            transport.httpCompression = this.opts.httpCompression;
           } else if ("websocket" === transportName) {
-            transport2.perMessageDeflate = this.opts.perMessageDeflate;
+            transport.perMessageDeflate = this.opts.perMessageDeflate;
           }
         } catch (e) {
           debug('error handshaking to transport "%s"', transportName);
@@ -16272,8 +16272,8 @@ var require_server = __commonJS({
           closeConnection(Server2.errors.BAD_REQUEST);
           return;
         }
-        const socket = new socket_1.Socket(id, this, transport2, req, protocol);
-        transport2.on("headers", (headers, req2) => {
+        const socket = new socket_1.Socket(id, this, transport, req, protocol);
+        transport.on("headers", (headers, req2) => {
           const isInitialRequest = !req2._query.sid;
           if (isInitialRequest) {
             if (this.opts.cookie) {
@@ -16286,7 +16286,7 @@ var require_server = __commonJS({
           }
           this.emit("headers", headers, req2);
         });
-        transport2.onRequest(req);
+        transport.onRequest(req);
         this.clients[id] = socket;
         this.clientsCount++;
         socket.once("close", () => {
@@ -16294,7 +16294,7 @@ var require_server = __commonJS({
           this.clientsCount--;
         });
         this.emit("connection", socket);
-        return transport2;
+        return transport;
       }
       async onWebTransportSession(session) {
         if (this.middlewares.length > 0) {
@@ -16336,10 +16336,10 @@ var require_server = __commonJS({
           return closeSession();
         }
         if (value.data === void 0) {
-          const transport2 = new webtransport_1.WebTransport(session, stream, reader);
+          const transport = new webtransport_1.WebTransport(session, stream, reader);
           const id = base64id.generateId();
           debug('handshaking client "%s" (WebTransport)', id);
-          const socket = new socket_1.Socket(id, this, transport2, null, 4);
+          const socket = new socket_1.Socket(id, this, transport, null, 4);
           this.clients[id] = socket;
           this.clientsCount++;
           socket.once("close", () => {
@@ -16366,8 +16366,8 @@ var require_server = __commonJS({
           return closeSession();
         } else {
           debug("upgrading existing transport");
-          const transport2 = new webtransport_1.WebTransport(session, stream, reader);
-          client._maybeUpgrade(transport2);
+          const transport = new webtransport_1.WebTransport(session, stream, reader);
+          client._maybeUpgrade(transport);
         }
       }
     };
@@ -16565,9 +16565,9 @@ var require_server = __commonJS({
           } else {
             debug("upgrading existing transport");
             websocket.removeListener("error", onUpgradeError);
-            const transport2 = this.createTransport(req._query.transport, req);
-            transport2.perMessageDeflate = this.opts.perMessageDeflate;
-            client._maybeUpgrade(transport2);
+            const transport = this.createTransport(req._query.transport, req);
+            transport.perMessageDeflate = this.opts.perMessageDeflate;
+            client._maybeUpgrade(transport);
           }
         } else {
           const closeConnection = (errorCode, errorContext) => abortUpgrade(socket, errorCode, errorContext);
@@ -17443,10 +17443,10 @@ var require_userver = __commonJS({
           maxPayloadLength: this.opts.maxHttpBufferSize,
           upgrade: this.handleUpgrade.bind(this),
           open: (ws) => {
-            const transport2 = ws.getUserData().transport;
-            transport2.socket = ws;
-            transport2.writable = true;
-            transport2.emit("ready");
+            const transport = ws.getUserData().transport;
+            transport.socket = ws;
+            transport.writable = true;
+            transport.emit("ready");
           },
           message: (ws, message, isBinary) => {
             ws.getUserData().transport.onData(isBinary ? message : Buffer.from(message).toString());
@@ -17513,7 +17513,7 @@ var require_userver = __commonJS({
             return;
           }
           const id = req._query.sid;
-          let transport2;
+          let transport;
           if (id) {
             const client = this.clients[id];
             if (!client) {
@@ -17527,12 +17527,12 @@ var require_userver = __commonJS({
               return res.close();
             } else {
               debug("upgrading existing transport");
-              transport2 = this.createTransport(req._query.transport, req);
-              client._maybeUpgrade(transport2);
+              transport = this.createTransport(req._query.transport, req);
+              client._maybeUpgrade(transport);
             }
           } else {
-            transport2 = await this.handshake(req._query.transport, req, (errorCode2, errorContext2) => this.abortRequest(res, errorCode2, errorContext2));
-            if (!transport2) {
+            transport = await this.handshake(req._query.transport, req, (errorCode2, errorContext2) => this.abortRequest(res, errorCode2, errorContext2));
+            if (!transport) {
               return;
             }
           }
@@ -17547,7 +17547,7 @@ var require_userver = __commonJS({
             req.res.writeHeader(key, additionalHeaders[key]);
           });
           res.upgrade({
-            transport: transport2
+            transport
           }, req.getHeader("sec-websocket-key"), req.getHeader("sec-websocket-protocol"), req.getHeader("sec-websocket-extensions"), context);
         };
         this._applyMiddlewares(req, res, (err) => {
@@ -27114,9 +27114,9 @@ var require_lib2 = __commonJS({
       if (module.exports.supportsStreams) {
         return;
       }
-      var streams = require_streams()(streamModule2);
-      module.exports.IconvLiteEncoderStream = streams.IconvLiteEncoderStream;
-      module.exports.IconvLiteDecoderStream = streams.IconvLiteDecoderStream;
+      var streams2 = require_streams()(streamModule2);
+      module.exports.IconvLiteEncoderStream = streams2.IconvLiteEncoderStream;
+      module.exports.IconvLiteDecoderStream = streams2.IconvLiteDecoderStream;
       module.exports.encodeStream = function encodeStream(encoding, options) {
         return new module.exports.IconvLiteEncoderStream(module.exports.getEncoder(encoding, options), options);
       };
@@ -47935,26 +47935,26 @@ var require_transport2 = __commonJS({
     function flush(stream) {
       stream.flushSync();
     }
-    function transport2(fullOptions) {
-      const { pipeline, targets: targets2, levels, dedupe, worker = {}, caller = getCallers(), sync = false } = fullOptions;
+    function transport(fullOptions) {
+      const { pipeline, targets, levels, dedupe, worker = {}, caller = getCallers(), sync = false } = fullOptions;
       const options = {
         ...fullOptions.options
       };
       const callers = typeof caller === "string" ? [caller] : caller;
       const bundlerOverrides = "__bundlerPathsOverrides" in globalThis ? globalThis.__bundlerPathsOverrides : {};
       let target = fullOptions.target;
-      if (target && targets2) {
+      if (target && targets) {
         throw new Error("only one of target or targets can be specified");
       }
-      if (targets2) {
+      if (targets) {
         target = bundlerOverrides["pino-worker"] || join(__dirname, "worker.js");
-        options.targets = targets2.filter((dest) => dest.target).map((dest) => {
+        options.targets = targets.filter((dest) => dest.target).map((dest) => {
           return {
             ...dest,
             target: fixTarget(dest.target)
           };
         });
-        options.pipelines = targets2.filter((dest) => dest.pipeline).map((dest) => {
+        options.pipelines = targets.filter((dest) => dest.pipeline).map((dest) => {
           return dest.pipeline.map((t) => {
             return {
               ...t,
@@ -48005,7 +48005,7 @@ var require_transport2 = __commonJS({
         return fixTarget2;
       }
     }
-    module.exports = transport2;
+    module.exports = transport;
   }
 });
 
@@ -48037,7 +48037,7 @@ var require_tools = __commonJS({
       msgPrefixSym
     } = require_symbols();
     var { isMainThread } = __require("worker_threads");
-    var transport2 = require_transport2();
+    var transport = require_transport2();
     var asJsonChan;
     if (typeof diagChan.tracingChannel === "function") {
       asJsonChan = diagChan.tracingChannel("pino_asJson");
@@ -48282,7 +48282,7 @@ var require_tools = __commonJS({
           if (opts.customLevels) {
             customLevels = opts.useOnlyCustomLevels ? opts.customLevels : Object.assign({}, opts.levels, opts.customLevels);
           }
-          stream = transport2({ caller, ...opts.transport, levels: customLevels });
+          stream = transport({ caller, ...opts.transport, levels: customLevels });
         }
         opts = Object.assign({}, defaultOptions, opts);
         opts.serializers = Object.assign({}, defaultOptions.serializers, opts.serializers);
@@ -49437,11 +49437,11 @@ var require_multistream = __commonJS({
       function write(data) {
         let dest;
         const level = this.lastLevel;
-        const { streams } = this;
+        const { streams: streams2 } = this;
         let recordedLevel = 0;
         let stream;
-        for (let i = initLoopVar(streams.length, opts.dedupe); checkLoopVar(i, streams.length, opts.dedupe); i = adjustLoopVar(i, opts.dedupe)) {
-          dest = streams[i];
+        for (let i = initLoopVar(streams2.length, opts.dedupe); checkLoopVar(i, streams2.length, opts.dedupe); i = adjustLoopVar(i, opts.dedupe)) {
+          dest = streams2[i];
           if (dest.level <= level) {
             if (recordedLevel !== 0 && recordedLevel !== dest.level) {
               break;
@@ -49487,7 +49487,7 @@ var require_multistream = __commonJS({
         if (!isStream) {
           throw Error("stream object needs to implement either StreamEntry or DestinationStream interface");
         }
-        const { streams, streamLevels: streamLevels2 } = this;
+        const { streams: streams2, streamLevels: streamLevels2 } = this;
         let level;
         if (typeof dest.levelVal === "number") {
           level = dest.levelVal;
@@ -49504,18 +49504,18 @@ var require_multistream = __commonJS({
           levelVal: void 0,
           id: ++res.lastId
         };
-        streams.unshift(dest_);
-        streams.sort(compareByLevel);
-        this.minLevel = streams[0].level;
+        streams2.unshift(dest_);
+        streams2.sort(compareByLevel);
+        this.minLevel = streams2[0].level;
         return res;
       }
       function remove(id) {
-        const { streams } = this;
-        const index = streams.findIndex((s) => s.id === id);
+        const { streams: streams2 } = this;
+        const index = streams2.findIndex((s) => s.id === id);
         if (index >= 0) {
-          streams.splice(index, 1);
-          streams.sort(compareByLevel);
-          this.minLevel = streams.length > 0 ? streams[0].level : -1;
+          streams2.splice(index, 1);
+          streams2.sort(compareByLevel);
+          this.minLevel = streams2.length > 0 ? streams2[0].level : -1;
         }
         return res;
       }
@@ -49528,9 +49528,9 @@ var require_multistream = __commonJS({
         }
       }
       function clone(level) {
-        const streams = new Array(this.streams.length);
-        for (let i = 0; i < streams.length; i++) {
-          streams[i] = {
+        const streams2 = new Array(this.streams.length);
+        for (let i = 0; i < streams2.length; i++) {
+          streams2[i] = {
             level,
             stream: this.streams[i].stream
           };
@@ -49540,7 +49540,7 @@ var require_multistream = __commonJS({
           add,
           remove,
           minLevel: level,
-          streams,
+          streams: streams2,
           clone,
           emit,
           flushSync,
@@ -49567,18 +49567,7 @@ var require_multistream = __commonJS({
 // ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js
 var require_pino = __commonJS({
   "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports, module) {
-    function pinoBundlerAbsolutePath(p) {
-      try {
-        const path6 = __require("path");
-        const workingDir = "C:\\Users\\ACER\\Desktop\\Local-Streamer\\artifacts\\api-server";
-        const outputDir = path6.resolve(workingDir, "dist");
-        return path6.resolve(outputDir, p.replace(/^\.\//, ""));
-      } catch (e) {
-        const f = new Function("p", "return new URL(p, import.meta.url).pathname");
-        return f(p);
-      }
-    }
-    globalThis.__bundlerPathsOverrides = { ...globalThis.__bundlerPathsOverrides || {}, "thread-stream-worker": pinoBundlerAbsolutePath("./thread-stream-worker.mjs"), "pino-worker": pinoBundlerAbsolutePath("./pino-worker.mjs"), "pino/file": pinoBundlerAbsolutePath("./pino-file.mjs"), "pino-pretty": pinoBundlerAbsolutePath("./pino-pretty.mjs") };
+    "use strict";
     var os3 = __require("node:os");
     var stdSerializers = require_pino_std_serializers();
     var caller = require_caller();
@@ -52839,10 +52828,10 @@ var require_multipart = __commonJS({
         this._bparser = ignoreData;
         if (!err)
           err = checkEndState(this);
-        const fileStream = this._fileStream;
-        if (fileStream) {
+        const fileStream2 = this._fileStream;
+        if (fileStream2) {
           this._fileStream = null;
-          fileStream.destroy(err);
+          fileStream2.destroy(err);
         }
         cb(err);
       }
@@ -52865,10 +52854,10 @@ var require_multipart = __commonJS({
     function checkEndState(self2) {
       if (self2._hparser)
         return new Error("Malformed part header");
-      const fileStream = self2._fileStream;
-      if (fileStream) {
+      const fileStream2 = self2._fileStream;
+      if (fileStream2) {
         self2._fileStream = null;
-        fileStream.destroy(new Error("Unexpected end of file"));
+        fileStream2.destroy(new Error("Unexpected end of file"));
       }
       if (!self2._complete)
         return new Error("Unexpected end of form");
@@ -54411,16 +54400,16 @@ var require_make_middleware = __commonJS({
           }
           appendField(req.body, fieldname, value);
         });
-        busboy.on("file", function(fieldname, fileStream, { filename, encoding, mimeType }) {
+        busboy.on("file", function(fieldname, fileStream2, { filename, encoding, mimeType }) {
           var pendingWritesIncremented = false;
-          fileStream.on("error", function(err) {
+          fileStream2.on("error", function(err) {
             if (pendingWritesIncremented) {
               pendingWrites.decrement();
             }
             abortWithError(err);
           });
           if (fieldname == null) return abortWithCode("MISSING_FIELD_NAME");
-          if (!filename) return fileStream.resume();
+          if (!filename) return fileStream2.resume();
           if (limits && Object.prototype.hasOwnProperty.call(limits, "fieldNameSize")) {
             if (fieldname.length > limits.fieldNameSize) return abortWithCode("LIMIT_FIELD_KEY");
           }
@@ -54434,7 +54423,7 @@ var require_make_middleware = __commonJS({
           fileFilter(req, file, function(err, includeFile) {
             if (errorOccured) {
               appender.removePlaceholder(placeholder);
-              return fileStream.resume();
+              return fileStream2.resume();
             }
             if (err) {
               appender.removePlaceholder(placeholder);
@@ -54442,7 +54431,7 @@ var require_make_middleware = __commonJS({
             }
             if (!includeFile) {
               appender.removePlaceholder(placeholder);
-              return fileStream.resume();
+              return fileStream2.resume();
             }
             var aborting = false;
             pendingWritesIncremented = true;
@@ -54450,9 +54439,9 @@ var require_make_middleware = __commonJS({
             Object.defineProperty(file, "stream", {
               configurable: true,
               enumerable: false,
-              value: fileStream
+              value: fileStream2
             });
-            fileStream.on("limit", function() {
+            fileStream2.on("limit", function() {
               aborting = true;
               abortWithCode("LIMIT_FILE_SIZE", fieldname);
             });
@@ -57190,23 +57179,23 @@ var require_pipeline = __commonJS({
     function pipe(from, to) {
       return from.pipe(to);
     }
-    function popCallback(streams) {
-      if (!streams.length) return noop;
-      if (typeof streams[streams.length - 1] !== "function") return noop;
-      return streams.pop();
+    function popCallback(streams2) {
+      if (!streams2.length) return noop;
+      if (typeof streams2[streams2.length - 1] !== "function") return noop;
+      return streams2.pop();
     }
     function pipeline() {
-      for (var _len = arguments.length, streams = new Array(_len), _key = 0; _key < _len; _key++) {
-        streams[_key] = arguments[_key];
+      for (var _len = arguments.length, streams2 = new Array(_len), _key = 0; _key < _len; _key++) {
+        streams2[_key] = arguments[_key];
       }
-      var callback = popCallback(streams);
-      if (Array.isArray(streams[0])) streams = streams[0];
-      if (streams.length < 2) {
+      var callback = popCallback(streams2);
+      if (Array.isArray(streams2[0])) streams2 = streams2[0];
+      if (streams2.length < 2) {
         throw new ERR_MISSING_ARGS("streams");
       }
       var error;
-      var destroys = streams.map(function(stream, i) {
-        var reading = i < streams.length - 1;
+      var destroys = streams2.map(function(stream, i) {
+        var reading = i < streams2.length - 1;
         var writing = i > 0;
         return destroyer(stream, reading, writing, function(err) {
           if (!error) error = err;
@@ -57216,7 +57205,7 @@ var require_pipeline = __commonJS({
           callback(error);
         });
       });
-      return streams.reduce(pipe);
+      return streams2.reduce(pipe);
     }
     module.exports = pipeline;
   }
@@ -62701,17 +62690,15 @@ var import_pino = __toESM(require_pino(), 1);
 import fs3 from "node:fs";
 import path3 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-var isProduction = process.env.NODE_ENV === "production";
 var __filename2 = fileURLToPath2(import.meta.url);
 var __dirname3 = path3.dirname(__filename2);
 var logFile = path3.resolve(
   process.env["LOG_FILE"] ?? path3.join(__dirname3, "..", "..", "api.log")
 );
-var fileWritable = false;
+var fileStream = null;
 try {
   fs3.mkdirSync(path3.dirname(logFile), { recursive: true });
-  fs3.appendFileSync(logFile, "");
-  fileWritable = true;
+  fileStream = fs3.createWriteStream(logFile, { flags: "a" });
 } catch (e) {
   process.stderr.write(
     `[logger] WARNING: cannot write to log file "${logFile}": ${e.message}
@@ -62719,13 +62706,10 @@ try {
 `
   );
 }
-var targets = [
-  // Console: pretty in dev, plain JSON in production
-  ...isProduction ? [{ target: "pino/file", options: { destination: 1 }, level: process.env["LOG_LEVEL"] ?? "info" }] : [{ target: "pino-pretty", options: { colorize: true }, level: process.env["LOG_LEVEL"] ?? "info" }],
-  // File — only if writable
-  ...fileWritable ? [{ target: "pino/file", options: { destination: logFile, append: true }, level: process.env["LOG_LEVEL"] ?? "info" }] : []
+var streams = [
+  process.stdout,
+  ...fileStream ? [fileStream] : []
 ];
-var transport = import_pino.default.transport({ targets });
 var logger = (0, import_pino.default)(
   {
     level: process.env["LOG_LEVEL"] ?? "info",
@@ -62735,7 +62719,7 @@ var logger = (0, import_pino.default)(
       "res.headers['set-cookie']"
     ]
   },
-  transport
+  import_pino.default.multistream(streams)
 );
 
 // src/app.ts
