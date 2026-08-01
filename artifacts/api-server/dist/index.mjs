@@ -62063,6 +62063,7 @@ function transcodeToMp4(input, output) {
     let proc;
     try {
       proc = spawn("ffmpeg", [
+        "-y",
         "-i",
         input,
         "-c:v",
@@ -62077,7 +62078,6 @@ function transcodeToMp4(input, output) {
         "128k",
         "-movflags",
         "+faststart",
-        "-y",
         output
       ]);
     } catch (e) {
@@ -62215,13 +62215,13 @@ router3.post("/api/faststart/:filename", (req, res) => {
   let proc;
   try {
     proc = spawn("ffmpeg", [
+      "-y",
       "-i",
       videoPath,
       "-c",
       "copy",
       "-movflags",
       "+faststart",
-      "-y",
       tmpPath
     ]);
   } catch (e) {
@@ -62453,6 +62453,14 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     "libx264",
     "-preset",
     "ultrafast",
+    "-tune",
+    "zerolatency",
+    "-g",
+    "60",
+    "-keyint_min",
+    "60",
+    "-sc_threshold",
+    "0",
     "-crf",
     "24",
     "-vf",
@@ -62467,6 +62475,7 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
   ];
   const inputArgs = startAt > 0 ? ["-ss", String(startAt), "-i", videoPath] : ["-i", videoPath];
   const proc = spawn2("ffmpeg", [
+    "-y",
     ...inputArgs,
     ...videoArgs,
     "-f",
@@ -62479,7 +62488,6 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     String(startNumber),
     "-hls_segment_filename",
     path2.join(dir, "seg%04d.ts"),
-    "-y",
     manifestPath
   ]);
   job.proc = proc;
