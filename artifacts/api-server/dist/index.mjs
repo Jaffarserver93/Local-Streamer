@@ -62337,7 +62337,7 @@ import { spawn as spawn2 } from "node:child_process";
 import fs2 from "node:fs";
 import path2 from "node:path";
 import os from "node:os";
-var HLS_CACHE_ROOT = process.env["HLS_CACHE_DIR"] ?? path2.join(os.tmpdir(), ".localstream-hls");
+var HLS_CACHE_ROOT = process.env["HLS_CACHE_DIR"] ?? path2.join(os.homedir(), ".localstream-hls");
 var HLS_SEGMENT_DURATION = 2;
 var jobs = /* @__PURE__ */ new Map();
 var io3 = null;

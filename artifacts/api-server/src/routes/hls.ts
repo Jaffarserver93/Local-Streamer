@@ -41,7 +41,7 @@ import { getVideoDir } from "./videos.js";
 // ── Config ─────────────────────────────────────────────────────────────────────
 const HLS_CACHE_ROOT =
   process.env["HLS_CACHE_DIR"] ??
-  path.join(os.tmpdir(), ".localstream-hls");
+  path.join(os.homedir(), ".localstream-hls");
 
 /** 2 s segments = fine seek granularity; player jumps within a 2-second window. */
 const HLS_SEGMENT_DURATION = 2;
