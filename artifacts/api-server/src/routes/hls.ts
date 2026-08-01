@@ -36,6 +36,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { getVideoDir } from "./videos.js";
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 const HLS_CACHE_ROOT =
@@ -279,8 +280,9 @@ const router = Router();
 // ── POST /api/hls/start/:filename ──────────────────────────────────────────────
 router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
   const filename = path.basename(String(req.params["filename"] || ""));
-  const videoDir = String(req.query["videoDir"] || "");
-  const socketId = String(req.query["socketId"] || "");
+  const reqVideoDir = String(req.query["videoDir"] || req.body?.["videoDir"] || "");
+  const videoDir = reqVideoDir ? reqVideoDir : getVideoDir();
+  const socketId = String(req.query["socketId"] || req.body?.["socketId"] || "");
 
   if (!filename || !videoDir) {
     res.status(400).json({ error: "filename and videoDir are required" });
@@ -289,7 +291,7 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
 
   const videoPath = path.join(videoDir, filename);
   if (!fs.existsSync(videoPath)) {
-    res.status(404).json({ error: `Not found: "${filename}"` });
+    res.status(404).json({ error: `Not found: "${filename}" in "${videoDir}"` });
     return;
   }
 
@@ -354,8 +356,9 @@ router.post("/api/hls/start/:filename", async (req: Request, res: Response) => {
  */
 router.post("/api/hls/seek/:filename", async (req: Request, res: Response) => {
   const filename = path.basename(String(req.params["filename"] || ""));
-  const videoDir = String(req.query["videoDir"] || "");
-  const socketId = String(req.query["socketId"] || "");
+  const reqVideoDir = String(req.query["videoDir"] || req.body?.["videoDir"] || "");
+  const videoDir = reqVideoDir ? reqVideoDir : getVideoDir();
+  const socketId = String(req.query["socketId"] || req.body?.["socketId"] || "");
   const position = Number((req.body as Record<string, unknown>)?.["position"]) || 0;
 
   if (!filename || !videoDir) {

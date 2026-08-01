@@ -36,6 +36,10 @@ const __dirname = dirname(__filename);
 let currentVideoDir: string =
   process.env["VIDEO_DIR"] ?? path.join(__dirname, "..", "videos");
 
+export function getVideoDir(): string {
+  return currentVideoDir;
+}
+
 // All extensions we can stream directly (browser-native or via transcode)
 const MIME_TYPES: Record<string, string> = {
   ".mp4":  "video/mp4",

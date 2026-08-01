@@ -61993,6 +61993,9 @@ import { spawn } from "node:child_process";
 var __filename = fileURLToPath(import.meta.url);
 var __dirname2 = dirname(__filename);
 var currentVideoDir = process.env["VIDEO_DIR"] ?? path.join(__dirname2, "..", "videos");
+function getVideoDir() {
+  return currentVideoDir;
+}
 var MIME_TYPES = {
   ".mp4": "video/mp4",
   ".m4v": "video/mp4",
@@ -62545,15 +62548,16 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
 var router4 = (0, import_express4.Router)();
 router4.post("/api/hls/start/:filename", async (req, res) => {
   const filename = path2.basename(String(req.params["filename"] || ""));
-  const videoDir = String(req.query["videoDir"] || "");
-  const socketId = String(req.query["socketId"] || "");
+  const reqVideoDir = String(req.query["videoDir"] || req.body?.["videoDir"] || "");
+  const videoDir = reqVideoDir ? reqVideoDir : getVideoDir();
+  const socketId = String(req.query["socketId"] || req.body?.["socketId"] || "");
   if (!filename || !videoDir) {
     res.status(400).json({ error: "filename and videoDir are required" });
     return;
   }
   const videoPath = path2.join(videoDir, filename);
   if (!fs2.existsSync(videoPath)) {
-    res.status(404).json({ error: `Not found: "${filename}"` });
+    res.status(404).json({ error: `Not found: "${filename}" in "${videoDir}"` });
     return;
   }
   const s = stem(filename);
@@ -62595,8 +62599,9 @@ router4.post("/api/hls/start/:filename", async (req, res) => {
 });
 router4.post("/api/hls/seek/:filename", async (req, res) => {
   const filename = path2.basename(String(req.params["filename"] || ""));
-  const videoDir = String(req.query["videoDir"] || "");
-  const socketId = String(req.query["socketId"] || "");
+  const reqVideoDir = String(req.query["videoDir"] || req.body?.["videoDir"] || "");
+  const videoDir = reqVideoDir ? reqVideoDir : getVideoDir();
+  const socketId = String(req.query["socketId"] || req.body?.["socketId"] || "");
   const position = Number(req.body?.["position"]) || 0;
   if (!filename || !videoDir) {
     res.status(400).json({ error: "filename and videoDir are required" });
