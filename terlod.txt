@@ -1,0 +1,337 @@
+[22:26:41.537] INFO (24203):   💻  Localhost: http://localhost:3000
+[22:26:51.064] INFO (24203): request completed
+    req: {
+      "id": 1,
+      "method": "GET",
+      "url": "/favicon.ico"
+    }
+    res: {
+      "statusCode": 404
+    }
+    responseTime: 87
+[22:26:52.053] INFO (24203): request completed
+    req: {
+      "id": 2,
+      "method": "GET",
+      "url": "/"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 48
+[22:26:52.107] INFO (24203): request completed
+    req: {
+      "id": 3,
+      "method": "GET",
+      "url": "/video-js.css"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 21
+[22:26:52.126] INFO (24203): request completed
+    req: {
+      "id": 4,
+      "method": "GET",
+      "url": "/style.css"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 35
+[22:26:52.132] INFO (24203): request completed
+    req: {
+      "id": 5,
+      "method": "GET",
+      "url": "/video.min.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 14
+[22:26:52.154] INFO (24203): request completed
+    req: {
+      "id": 6,
+      "method": "GET",
+      "url": "/socket.io.min.js"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 18
+[22:26:52.169] INFO (24203): request completed
+    req: {
+      "id": 7,
+      "method": "GET",
+      "url": "/script.js"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 25
+[22:26:52.331] INFO (24203): request completed
+    req: {
+      "id": 8,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 39
+[22:26:52.365] INFO (24203): request completed           req: {
+      "id": 9,
+      "method": "GET",
+      "url": "/api/videos"
+    }                                                    res: {
+      "statusCode": 200                                  }
+    responseTime: 66
+[CLIENT-LOG] [ERROR] Player playback error | File: "s1ep1.mp4" | Code: 4 | Src: /video/s1ep1.mp4 | UA: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36
+[22:26:54.597] INFO (24203): request completed
+    req: {
+      "id": 10,                                            "method": "GET",
+      "url": "/api/video-dir"
+    }                                                    res: {
+      "statusCode": 304
+    }
+    responseTime: 10
+[22:26:54.785] INFO (24203): request aborted
+    req: {
+      "id": 13,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 68
+[22:26:54.909] INFO (24203): request completed
+    req: {
+      "id": 14,
+      "method": "POST",                                    "url": "/api/client-log"                           }
+    res: {                                                 "statusCode": 200
+    }
+    responseTime: 76                                 [22:26:54.959] INFO (24203): request aborted             req: {
+      "id": 11,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {                                                 "statusCode": 206
+    }
+    responseTime: 350
+[22:26:56.038] INFO (24203): request completed
+    req: {
+      "id": 15,
+      "method": "POST",                                    "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 1115
+[22:26:56.081] INFO (24203): request completed
+    req: {
+      "id": 12,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 1447
+[HLS Error] FFmpeg failed for "s1ep1.mp4" (exit 8): Error splitting the argument list: Option not found
+[22:27:09.219] INFO (24203): request completed
+    req: {
+      "id": 16,
+      "method": "POST",
+      "url": "/api/hls/clear"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 15
+[CLIENT-LOG] [ERROR] Player playback error | File: "s1ep1.mp4" | Code: 4 | Src: /video/s1ep1.mp4 | UA: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36
+[22:27:11.044] INFO (24203): request completed
+    req: {
+      "id": 17,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 7
+[22:27:11.107] INFO (24203): request completed
+    req: {
+      "id": 19,
+      "method": "POST",
+      "url": "/api/client-log"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 11
+[22:27:11.817] INFO (24203): request completed
+    req: {
+      "id": 21,
+      "method": "GET",
+      "url": "/"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 18
+[22:27:11.856] INFO (24203): request aborted
+    req: {
+      "id": 20,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": null
+    }
+    responseTime: 720
+[22:27:11.894] INFO (24203): request aborted
+    req: {
+      "id": 18,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": null
+    }
+    responseTime: 838
+[22:27:11.903] INFO (24203): request completed
+    req: {
+      "id": 22,
+      "method": "GET",
+      "url": "/video-js.css"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 28
+[22:27:11.913] INFO (24203): request completed
+    req: {
+      "id": 23,
+      "method": "GET",
+      "url": "/style.css"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 7
+[22:27:11.953] INFO (24203): request completed
+    req: {
+      "id": 24,
+      "method": "GET",
+      "url": "/video.min.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 36
+[22:27:12.014] INFO (24203): request completed
+    req: {
+      "id": 25,
+      "method": "GET",
+      "url": "/socket.io.min.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 56
+[22:27:12.027] INFO (24203): request completed
+    req: {
+      "id": 26,
+      "method": "GET",
+      "url": "/script.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 8
+[22:27:12.090] INFO (24203): request completed
+    req: {
+      "id": 27,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 25
+[22:27:12.118] INFO (24203): request completed
+    req: {
+      "id": 28,
+      "method": "GET",
+      "url": "/api/videos"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 42
+[HLS Error] FFmpeg failed for "s1ep1.mp4" (exit 8): Error splitting the argument list: Option not found
+[22:27:13.116] INFO (24203): request completed
+    req: {
+      "id": 29,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 11
+[22:27:13.222] INFO (24203): request aborted
+    req: {
+      "id": 32,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 43
+[CLIENT-LOG] [ERROR] Player playback error | File: "s1ep1.mp4" | Code: 4 | Src: /video/s1ep1.mp4 | UA: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36
+[22:27:13.296] INFO (24203): request completed
+    req: {
+      "id": 33,
+      "method": "POST",
+      "url": "/api/client-log"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 13
+[22:27:13.334] INFO (24203): request aborted
+    req: {
+      "id": 30,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 214
+[22:27:14.046] INFO (24203): request completed
+    req: {
+      "id": 31,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 914
+[22:27:14.258] INFO (24203): request completed
+    req: {
+      "id": 34,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 959
+[HLS Error] FFmpeg failed for "s1ep1.mp4" (exit 8): Error splitting the argument list: Option not found
+^C
+~/localstream $

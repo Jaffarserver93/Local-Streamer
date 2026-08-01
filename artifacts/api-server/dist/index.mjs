@@ -62373,7 +62373,7 @@ function probeVideoCodec(videoPath) {
   return new Promise((resolve) => {
     let proc;
     try {
-      const ffprobeArgs = [
+      proc = spawn2("ffprobe", [
         "-v",
         "error",
         "-select_streams",
@@ -62383,8 +62383,7 @@ function probeVideoCodec(videoPath) {
         "-of",
         "default=noprint_wrappers=1:nokey=1",
         videoPath
-      ].filter(Boolean);
-      proc = spawn2("ffprobe", ffprobeArgs);
+      ]);
     } catch {
       resolve(null);
       return;
@@ -62463,12 +62462,6 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     "ultrafast",
     "-tune",
     "zerolatency",
-    "-g",
-    "60",
-    "-keyint_min",
-    "60",
-    "-sc_threshold",
-    "0",
     "-crf",
     "24",
     "-vf",
@@ -62492,7 +62485,7 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     "-f",
     "hls",
     "-hls_time",
-    String(HLS_SEGMENT_DURATION),
+    String(HLS_SEGMENT_DURATION || 6),
     "-hls_list_size",
     "0",
     "-hls_start_number",

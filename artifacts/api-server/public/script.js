@@ -150,16 +150,12 @@ function logClientError(message, extra = {}) {
         return;
       }
 
-      // If direct stream failed due to unsupported codec/format (code 2, 3 or 4), auto-start HLS
+      // If direct stream failed due to unsupported codec/format (code 3 or 4), auto-start HLS
       if ((err?.code === 3 || err?.code === 4 || err?.code === 2) && activeFilename) {
         showToast("⚡ Converting video for smooth mobile playback...");
         try { player.error(null); } catch {}
-        fetch(`/api/hls/start/${encodeURIComponent(activeFilename)}?videoDir=${encodeURIComponent(currentVideoDir)}&socketId=${encodeURIComponent(socket.id)}`, {
+        fetch(`/api/hls/start/${encodeURIComponent(activeFilename)}?videoDir=${encodeURIComponent(currentVideoDir)}`, {
           method: "POST"
-        }).then(r => r.json()).then(body => {
-          if (body && body.segments && body.segments >= 1) {
-            switchToHls(activeFilename);
-          }
         }).catch(() => {});
         return;
       }
@@ -1108,20 +1104,16 @@ socket.on("hls-segment", ({ filename, count, transcoding }) => {
   hlsState.set(filename, "generating");
   updateHlsCardState(filename, "generating", count, transcoding);
 
-  if (filename === activeFilename && count >= 1) {
-    if (
-      pendingHlsSeek &&
-      pendingHlsSeek.filename === filename
-    ) {
-      const { position } = pendingHlsSeek;
-      pendingHlsSeek = null;
-      switchToHlsAt(filename, position);
-    } else if (player) {
-      const src = player.currentSrc() || "";
-      if (player.error() || (src && !src.includes("/api/hls/"))) {
-        switchToHls(filename);
-      }
-    }
+  // If a seek-triggered HLS restart is pending AND we have at least 1 segment
+  // for the right file, the target position is now on disk → switch to HLS immediately.
+  if (
+    pendingHlsSeek &&
+    pendingHlsSeek.filename === filename &&
+    count >= 1
+  ) {
+    const { position } = pendingHlsSeek;
+    pendingHlsSeek = null;
+    switchToHlsAt(filename, position);
   }
 });
 
@@ -1233,9 +1225,19 @@ async function playViaServer(filename) {
       hlsState.set(filename, "generating");
       updateHlsCardState(filename, "generating", body.segments ?? 0, body.transcoding);
 
-      // Only switch to HLS if at least 1 segment is already ready on disk
-      if (body.segments && body.segments >= 1) {
+      // If direct stream has an error or already has >=1 segment, switch to HLS right away
+      if (player.error() || (body.segments && body.segments >= 1)) {
         switchToHls(filename);
+      } else {
+        // Poll for first segment to switch quickly if direct stream stalls or errors out
+        const hlsPoll = setInterval(() => {
+          if (filename !== activeFilename) { clearInterval(hlsPoll); return; }
+          if (player.error() || (player.buffered() && player.buffered().length === 0)) {
+            switchToHls(filename);
+            clearInterval(hlsPoll);
+          }
+        }, 700);
+        setTimeout(() => clearInterval(hlsPoll), 7000);
       }
     }
   } catch { /* network hiccup — direct stream keeps playing */ }
