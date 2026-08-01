@@ -362,12 +362,22 @@ router.get("/video/:filename", (req: Request, res: Response) => {
   const rangeHeader        = req.headers["range"];
 
   if (rangeHeader) {
-    const [s, e] = rangeHeader.replace(/bytes=/, "").split("-");
-    const start  = parseInt(s ?? "0", 10);
-    // No artificial chunk cap — send the full remainder when browser omits the end.
-    // This lets the browser buffer as much as it wants in a single request instead
-    // of making 200+ round trips for a 200 MB file (the old 1 MB cap caused buffering).
-    const end    = (e && e.trim() !== "") ? parseInt(e, 10) : fileSize - 1;
+    let start = 0;
+    let end = fileSize - 1;
+
+    const parts = rangeHeader.replace(/bytes=/, "").split("-");
+    const rawStart = parts[0]?.trim();
+    const rawEnd   = parts[1]?.trim();
+
+    if (!rawStart && rawEnd) {
+      // Suffix range request (e.g. bytes=-50000) sent by Android Chrome to read moov atom
+      const suffixLen = parseInt(rawEnd, 10);
+      start = Math.max(0, fileSize - suffixLen);
+      end   = fileSize - 1;
+    } else {
+      start = rawStart ? parseInt(rawStart, 10) : 0;
+      end   = rawEnd ? parseInt(rawEnd, 10) : fileSize - 1;
+    }
 
     if (isNaN(start) || isNaN(end) || start < 0 || end >= fileSize || start > end) {
       res.setHeader("Content-Range", `bytes */${fileSize}`);

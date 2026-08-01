@@ -49570,7 +49570,7 @@ var require_pino = __commonJS({
     function pinoBundlerAbsolutePath(p) {
       try {
         const path6 = __require("path");
-        const workingDir = "/home/runner/workspace/artifacts/api-server";
+        const workingDir = "C:\\Users\\ACER\\Desktop\\Local-Streamer\\artifacts\\api-server";
         const outputDir = path6.resolve(workingDir, "dist");
         return path6.resolve(outputDir, p.replace(/^\.\//, ""));
       } catch (e) {
@@ -62287,9 +62287,19 @@ router3.get("/video/:filename", (req, res) => {
   const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
   const rangeHeader = req.headers["range"];
   if (rangeHeader) {
-    const [s, e] = rangeHeader.replace(/bytes=/, "").split("-");
-    const start = parseInt(s ?? "0", 10);
-    const end = e && e.trim() !== "" ? parseInt(e, 10) : fileSize - 1;
+    let start = 0;
+    let end = fileSize - 1;
+    const parts = rangeHeader.replace(/bytes=/, "").split("-");
+    const rawStart = parts[0]?.trim();
+    const rawEnd = parts[1]?.trim();
+    if (!rawStart && rawEnd) {
+      const suffixLen = parseInt(rawEnd, 10);
+      start = Math.max(0, fileSize - suffixLen);
+      end = fileSize - 1;
+    } else {
+      start = rawStart ? parseInt(rawStart, 10) : 0;
+      end = rawEnd ? parseInt(rawEnd, 10) : fileSize - 1;
+    }
     if (isNaN(start) || isNaN(end) || start < 0 || end >= fileSize || start > end) {
       res.setHeader("Content-Range", `bytes */${fileSize}`);
       res.status(416).end();
@@ -62336,29 +62346,6 @@ var io3 = null;
 function setHlsIO(ioInstance) {
   io3 = ioInstance;
 }
-var ffmpegCompatMode = false;
-function probeHlsStartNumber() {
-  try {
-    const proc = spawn2("ffmpeg", ["-hide_banner", "-help", "muxer=hls"]);
-    let out = "";
-    proc.stdout?.on("data", (d) => {
-      out += d.toString();
-    });
-    proc.stderr?.on("data", (d) => {
-      out += d.toString();
-    });
-    proc.on("close", () => {
-      if (out && !out.includes("hls_start_number")) {
-        ffmpegCompatMode = true;
-        console.log("[HLS] Startup probe: -hls_start_number not supported \u2014 compat mode enabled.");
-      }
-    });
-    proc.on("error", () => {
-    });
-  } catch {
-  }
-}
-probeHlsStartNumber();
 function emitTo(socketId, event, data) {
   if (!socketId) {
     io3?.emit(event, data);
@@ -62479,43 +62466,27 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     "copy"
   ];
   const inputArgs = startAt > 0 ? ["-ss", String(startAt), "-i", videoPath] : ["-i", videoPath];
-  function buildArgs(compat) {
-    return [
-      ...inputArgs,
-      ...videoArgs,
-      "-f",
-      "hls",
-      "-hls_time",
-      String(HLS_SEGMENT_DURATION),
-      "-hls_list_size",
-      "0",
-      // -hls_start_number is absent from some FFmpeg builds; dropped in compat mode.
-      ...compat ? [] : ["-hls_start_number", String(startNumber)],
-      "-hls_segment_filename",
-      path2.join(dir, "seg%04d.ts"),
-      // -hls_flags independent_segments is omitted entirely — Termux's FFmpeg
-      // doesn't recognise it and exits with code 8. It's cosmetic for VOD.
-      "-y",
-      manifestPath
-    ];
-  }
-  function spawnFfmpeg(args) {
-    const proc = spawn2("ffmpeg", args);
-    let stderrBuf = "";
-    proc.stderr?.on("data", (d) => {
-      stderrBuf += d.toString();
-    });
-    const done = new Promise((resolve) => {
-      proc.on("close", (code) => resolve({ code, stderr: stderrBuf }));
-      proc.on("error", (e) => {
-        const msg = e.code === "ENOENT" ? "ffmpeg not found \u2014 install it: pkg install ffmpeg" : e.message;
-        resolve({ code: -1, stderr: msg });
-      });
-    });
-    return { proc, done };
-  }
-  const attempt1 = spawnFfmpeg(buildArgs(ffmpegCompatMode));
-  job.proc = attempt1.proc;
+  const proc = spawn2("ffmpeg", [
+    ...inputArgs,
+    ...videoArgs,
+    "-f",
+    "hls",
+    "-hls_time",
+    String(HLS_SEGMENT_DURATION),
+    "-hls_list_size",
+    "0",
+    "-hls_start_number",
+    String(startNumber),
+    "-hls_segment_filename",
+    path2.join(dir, "seg%04d.ts"),
+    "-y",
+    manifestPath
+  ]);
+  job.proc = proc;
+  let stderrBuf = "";
+  proc.stderr?.on("data", (d) => {
+    stderrBuf += d.toString();
+  });
   const watcher = setInterval(() => {
     const n = countSegments(dir);
     if (n > job.segments) {
@@ -62524,30 +62495,7 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     }
   }, 500);
   job.watcher = watcher;
-  void attempt1.done.then(async ({ code, stderr }) => {
-    if (jobs.get(s) !== job) return;
-    if (code === 8 && !ffmpegCompatMode) {
-      console.error(
-        `[HLS] FFmpeg exited 8 (option not found) for "${filename}". Full stderr:
-${stderr.trim()}
-[HLS] Switching to compat mode (dropping -hls_start_number) and retrying.`
-      );
-      ffmpegCompatMode = true;
-      try {
-        fs2.rmSync(dir, { recursive: true, force: true });
-      } catch {
-      }
-      fs2.mkdirSync(dir, { recursive: true });
-      const attempt2 = spawnFfmpeg(buildArgs(true));
-      job.proc = attempt2.proc;
-      const { code: code2, stderr: stderr2 } = await attempt2.done;
-      if (jobs.get(s) !== job) return;
-      handleClose(code2, stderr2);
-      return;
-    }
-    handleClose(code, stderr);
-  });
-  function handleClose(code, stderr) {
+  proc.on("close", (code) => {
     clearInterval(watcher);
     job.watcher = void 0;
     if (jobs.get(s) !== job) return;
@@ -62564,14 +62512,10 @@ ${stderr.trim()}
       }
       emitTo(job.socketId, "hls-segment", { filename, count: n, transcoding: false, startAt });
     } else {
-      const lastLine = stderr.trim().split("\n").pop() || `exit code ${code}`;
-      const fullDiag = stderr.trim().length > lastLine.length ? `
---- ffmpeg stderr ---
-${stderr.trim()}
----` : "";
-      console.error(`[HLS Error] FFmpeg failed for "${filename}" (exit ${code}): ${lastLine}${fullDiag}`);
+      const errDetail = stderrBuf.trim().split("\n").pop() || `exit code ${code}`;
+      console.error(`[HLS Error] FFmpeg failed for "${filename}" (exit ${code}): ${errDetail}`);
       job.status = "error";
-      job.error = `ffmpeg exited ${code}: ${lastLine}`;
+      job.error = `ffmpeg exited ${code}: ${errDetail}`;
       emitTo(job.socketId, "hls-error", { filename, error: job.error });
       jobs.delete(s);
       try {
@@ -62579,7 +62523,21 @@ ${stderr.trim()}
       } catch {
       }
     }
-  }
+  });
+  proc.on("error", (e) => {
+    clearInterval(watcher);
+    job.watcher = void 0;
+    if (jobs.get(s) !== job) return;
+    const msg = e.code === "ENOENT" ? "ffmpeg not found \u2014 install it: pkg install ffmpeg" : e.message;
+    job.status = "error";
+    job.error = msg;
+    emitTo(job.socketId, "hls-error", { filename, error: msg });
+    jobs.delete(s);
+    try {
+      fs2.rmSync(dir, { recursive: true, force: true });
+    } catch {
+    }
+  });
   return job;
 }
 var router4 = (0, import_express4.Router)();
