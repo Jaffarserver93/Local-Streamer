@@ -1,0 +1,227 @@
+[18:12:06.760] INFO (11479): Server listening on all interfaces
+    port: 3000
+[18:12:06.761] INFO (11479):   📄  Log file: /data/data/com.termux/files/home/localstream/artifacts/api.log
+[18:12:06.762] INFO (11479):
+
+  📺  Smart TV (Samsung/LG):
+
+       https://10.49.16.252:3000  ← accept the "not secure" warning once
+
+  📱  Phone / tablet:
+
+       http://10.49.16.252:3000
+
+[18:12:06.762] INFO (11479):   💻  Localhost: http://localhost:3000
+[18:12:17.948] INFO (11479): request completed
+    req: {
+      "id": 1,
+      "method": "GET",
+      "url": "/favicon.ico"
+    }
+    res: {
+      "statusCode": 404
+    }
+    responseTime: 132
+[18:12:18.986] INFO (11479): request completed
+    req: {
+      "id": 2,
+      "method": "GET",
+      "url": "/"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 25
+[18:12:19.046] INFO (11479): request completed
+    req: {
+      "id": 3,
+      "method": "GET",
+      "url": "/video-js.css"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 16
+[18:12:19.051] INFO (11479): request completed
+    req: {
+      "id": 4,
+      "method": "GET",
+      "url": "/style.css"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 14
+[18:12:19.065] INFO (11479): request completed
+    req: {
+      "id": 5,
+      "method": "GET",
+      "url": "/video.min.js"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 9
+[18:12:19.105] INFO (11479): request completed
+    req: {
+      "id": 6,
+      "method": "GET",
+      "url": "/socket.io.min.js"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 32
+[18:12:19.115] INFO (11479): request completed
+    req: {
+      "id": 7,
+      "method": "GET",
+      "url": "/script.js"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 28
+[18:12:19.198] INFO (11479): request completed
+    req: {
+      "id": 8,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 37
+[18:12:19.225] INFO (11479): request completed
+    req: {
+      "id": 9,
+      "method": "GET",
+      "url": "/api/videos"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 58
+[18:12:19.787] INFO (11479): request completed
+    req: {
+      "id": 10,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 10
+[18:12:19.967] INFO (11479): request aborted
+    req: {
+      "id": 13,
+      "method": "GET",
+      "url": "/video/KALYANI%20(with%20Shreya%20Ghoshal)%20OFFICIAL%20MUSIC%20VIDEO%20%20ARJN%20%20KDS%20%20FIFTY4%20%20RONN%20%20SHREYA%20GHOSHAL_2160p.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 59
+[18:12:20.243] INFO (11479): request aborted
+    req: {
+      "id": 11,
+      "method": "GET",
+      "url": "/video/KALYANI%20(with%20Shreya%20Ghoshal)%20OFFICIAL%20MUSIC%20VIDEO%20%20ARJN%20%20KDS%20%20FIFTY4%20%20RONN%20%20SHREYA%20GHOSHAL_2160p.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 441
+[CLIENT-LOG] [ERROR] Player playback error | File: "s1ep1.mp4" | Code: 4 | Src: /video/s1ep1.mp4 | UA: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36
+[18:12:23.568] INFO (11479): request aborted
+    req: {
+      "id": 14,
+      "method": "GET",
+      "url": "/video/KALYANI%20(with%20Shreya%20Ghoshal)%20OFFICIAL%20MUSIC%20VIDEO%20%20ARJN%20%20KDS%20%20FIFTY4%20%20RONN%20%20SHREYA%20GHOSHAL_2160p.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 3573
+[18:12:23.615] INFO (11479): request completed
+    req: {
+      "id": 16,
+      "method": "GET",
+      "url": "/api/video-dir"
+    }
+    res: {
+      "statusCode": 304
+    }
+    responseTime: 14
+[18:12:23.785] INFO (11479): request aborted
+    req: {
+      "id": 19,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 50
+[18:12:23.887] INFO (11479): request completed
+    req: {
+      "id": 20,
+      "method": "POST",
+      "url": "/api/client-log"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 21
+[18:12:23.890] INFO (11479): request aborted
+    req: {
+      "id": 17,
+      "method": "GET",
+      "url": "/video/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 206
+    }
+    responseTime: 268
+[18:12:24.081] INFO (11479): request completed
+    req: {
+      "id": 15,
+      "method": "POST",
+      "url": "/api/hls/seek/KALYANI%20(with%20Shreya%20Ghoshal)%20OFFICIAL%20MUSIC%20VIDEO%20%20ARJN%20%20KDS%20%20FIFTY4%20%20RONN%20%20SHREYA%20GHOSHAL_2160p.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 3028
+[18:12:24.184] INFO (11479): request completed
+    req: {
+      "id": 12,
+      "method": "POST",
+      "url": "/api/hls/start/KALYANI%20(with%20Shreya%20Ghoshal)%20OFFICIAL%20MUSIC%20VIDEO%20%20ARJN%20%20KDS%20%20FIFTY4%20%20RONN%20%20SHREYA%20GHOSHAL_2160p.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 4361
+[18:12:24.941] INFO (11479): request completed
+    req: {
+      "id": 21,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 1048
+[18:12:25.060] INFO (11479): request completed
+    req: {
+      "id": 18,
+      "method": "POST",
+      "url": "/api/hls/start/s1ep1.mp4"
+    }
+    res: {
+      "statusCode": 200
+    }
+    responseTime: 1413
+[HLS Error] FFmpeg failed for "KALYANI (with Shreya Ghoshal) OFFICIAL MUSIC VIDEO  ARJN  KDS  FIFTY4  RONN  SHREYA GHOSHAL_2160p.mp4" (exit 8): Error splitting the argument list: Option not found
+[HLS Error] FFmpeg failed for "s1ep1.mp4" (exit 8): Error splitting the argument list: Option not found
