@@ -176,7 +176,9 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
 
   const videoArgs: string[] = needsTranscode
     ? [
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "24",
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+        "-crf", "24",
         "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-c:a", "aac", "-b:a", "128k",
       ]
@@ -189,6 +191,7 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
     : ["-i", videoPath];
 
   const proc = spawn("ffmpeg", [
+    "-y",
     ...inputArgs,
     ...videoArgs,
     "-f",                    "hls",
@@ -196,7 +199,6 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
     "-hls_list_size",        "0",
     "-hls_start_number",     String(startNumber),
     "-hls_segment_filename", path.join(dir, "seg%04d.ts"),
-    "-y",
     manifestPath,
   ]);
 

@@ -109,11 +109,12 @@ function transcodeToMp4(input: string, output: string): Promise<void> {
     let proc: ReturnType<typeof spawn>;
     try {
       proc = spawn("ffmpeg", [
+        "-y",
         "-i", input,
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart",
-        "-y", output,
+        output,
       ]);
     } catch (e) { reject(e); return; }
     proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`)));
@@ -281,10 +282,11 @@ router.post("/api/faststart/:filename", (req: Request, res: Response) => {
   let proc: ReturnType<typeof spawn>;
   try {
     proc = spawn("ffmpeg", [
+      "-y",
       "-i",  videoPath,
       "-c",  "copy",
       "-movflags", "+faststart",
-      "-y",  tmpPath,
+      tmpPath,
     ]);
   } catch (e) {
     broadcast("faststart-error", { filename: safeName, error: String(e) });
