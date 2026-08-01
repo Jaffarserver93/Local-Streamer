@@ -90,13 +90,14 @@ function probeVideoCodec(videoPath: string): Promise<string | null> {
   return new Promise((resolve) => {
     let proc: ChildProcess;
     try {
-      proc = spawn("ffprobe", [
+      const ffprobeArgs: string[] = [
         "-v", "error",
         "-select_streams", "v:0",
         "-show_entries", "stream=codec_name",
         "-of", "default=noprint_wrappers=1:nokey=1",
         videoPath,
-      ]);
+      ].filter(Boolean);
+      proc = spawn("ffprobe", ffprobeArgs);
     } catch { resolve(null); return; }
 
     let out = "";
@@ -173,6 +174,7 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
   // Using -hls_start_number means the manifest sets #EXT-X-MEDIA-SEQUENCE:N so
   // Video.js VHS maps each segment to the correct timeline position automatically.
   const startNumber = Math.floor(startAt / HLS_SEGMENT_DURATION);
+  const seekArgs: string[] = startAt > 0 ? ["-ss", String(startAt)] : [];
 
   const videoArgs: string[] = needsTranscode
     ? [
@@ -186,21 +188,21 @@ async function startJob(filename: string, videoPath: string, startAt = 0, socket
         "-c", "copy",
       ];
 
-  const inputArgs: string[] = startAt > 0
-    ? ["-ss", String(startAt), "-i", videoPath]  // fast input seek → nearest keyframe
-    : ["-i", videoPath];
-
-  const proc = spawn("ffmpeg", [
+  const ffmpegArgs: string[] = [
     "-y",
-    ...inputArgs,
+    "-loglevel", "error",
+    ...seekArgs,
+    "-i", videoPath,
     ...videoArgs,
-    "-f",                    "hls",
-    "-hls_time",             String(HLS_SEGMENT_DURATION),
-    "-hls_list_size",        "0",
-    "-hls_start_number",     String(startNumber),
+    "-f", "hls",
+    "-hls_time", String(HLS_SEGMENT_DURATION),
+    "-hls_list_size", "0",
+    "-hls_start_number", String(startNumber),
     "-hls_segment_filename", path.join(dir, "seg%04d.ts"),
     manifestPath,
-  ]);
+  ].filter(Boolean);
+
+  const proc = spawn("ffmpeg", ffmpegArgs);
 
   job.proc = proc;
 

@@ -62062,8 +62062,10 @@ function transcodeToMp4(input, output) {
   return new Promise((resolve, reject) => {
     let proc;
     try {
-      proc = spawn("ffmpeg", [
+      const ffmpegArgs = [
         "-y",
+        "-loglevel",
+        "error",
         "-i",
         input,
         "-c:v",
@@ -62079,7 +62081,8 @@ function transcodeToMp4(input, output) {
         "-movflags",
         "+faststart",
         output
-      ]);
+      ].filter(Boolean);
+      proc = spawn("ffmpeg", ffmpegArgs);
     } catch (e) {
       reject(e);
       return;
@@ -62214,8 +62217,10 @@ router3.post("/api/faststart/:filename", (req, res) => {
   res.json({ success: true, started: true });
   let proc;
   try {
-    proc = spawn("ffmpeg", [
+    const ffmpegArgs = [
       "-y",
+      "-loglevel",
+      "error",
       "-i",
       videoPath,
       "-c",
@@ -62223,7 +62228,8 @@ router3.post("/api/faststart/:filename", (req, res) => {
       "-movflags",
       "+faststart",
       tmpPath
-    ]);
+    ].filter(Boolean);
+    proc = spawn("ffmpeg", ffmpegArgs);
   } catch (e) {
     broadcast("faststart-error", { filename: safeName, error: String(e) });
     return;
@@ -62367,7 +62373,7 @@ function probeVideoCodec(videoPath) {
   return new Promise((resolve) => {
     let proc;
     try {
-      proc = spawn2("ffprobe", [
+      const ffprobeArgs = [
         "-v",
         "error",
         "-select_streams",
@@ -62377,7 +62383,8 @@ function probeVideoCodec(videoPath) {
         "-of",
         "default=noprint_wrappers=1:nokey=1",
         videoPath
-      ]);
+      ].filter(Boolean);
+      proc = spawn2("ffprobe", ffprobeArgs);
     } catch {
       resolve(null);
       return;
@@ -62448,6 +62455,7 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
   };
   jobs.set(s, job);
   const startNumber = Math.floor(startAt / HLS_SEGMENT_DURATION);
+  const seekArgs = startAt > 0 ? ["-ss", String(startAt)] : [];
   const videoArgs = needsTranscode ? [
     "-c:v",
     "libx264",
@@ -62473,10 +62481,13 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     "-c",
     "copy"
   ];
-  const inputArgs = startAt > 0 ? ["-ss", String(startAt), "-i", videoPath] : ["-i", videoPath];
-  const proc = spawn2("ffmpeg", [
+  const ffmpegArgs = [
     "-y",
-    ...inputArgs,
+    "-loglevel",
+    "error",
+    ...seekArgs,
+    "-i",
+    videoPath,
     ...videoArgs,
     "-f",
     "hls",
@@ -62489,7 +62500,8 @@ async function startJob(filename, videoPath, startAt = 0, socketId = "") {
     "-hls_segment_filename",
     path2.join(dir, "seg%04d.ts"),
     manifestPath
-  ]);
+  ].filter(Boolean);
+  const proc = spawn2("ffmpeg", ffmpegArgs);
   job.proc = proc;
   let stderrBuf = "";
   proc.stderr?.on("data", (d) => {
